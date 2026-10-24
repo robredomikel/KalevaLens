@@ -78,12 +78,12 @@ async function hitl1SourceInvestigationNode(state: EditorialWorkflowState) {
   `;
 
   // Interrupt workflow execution for Human Review
-  const decision: any = interrupt({
+  const decision = interrupt({
     taskId,
     type: "HITL_SOURCE_INVESTIGATION",
     message: "High risk or unverified source detected. Requires moderator investigation.",
     data: { candidate: state.candidate, verification: state.sourceVerification },
-  });
+  }) as { decision?: string; notes?: string } | undefined;
 
   return {
     hitl1Decision: decision?.decision || "APPROVE",
@@ -210,13 +210,13 @@ async function hitl2FinalApprovalNode(state: EditorialWorkflowState) {
   `;
 
   // 3. Interrupt Workflow for Final Moderator Decision
-  const decision: any = interrupt({
+  const decision = interrupt({
     taskId,
     storyId,
     type: "HITL_FINAL_APPROVAL",
     message: "Canonical article draft requires final human editorial approval.",
     data: { draft: state.draft, verification: state.contentVerification },
-  });
+  }) as { decision?: string; notes?: string } | undefined;
 
   return {
     hitl2Decision: decision?.decision || "APPROVE",

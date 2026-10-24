@@ -104,7 +104,7 @@ type FeedMedia = { status: string; url: string; captionsUrl?: string; durationSe
 
 export async function attachMedia<T extends Record<string, unknown>>(articles: T[], language = "en") {
   if (!articles.length) return articles;
-  const ids = articles.map((a) => a.canonicalId).filter(Boolean);
+  const ids = articles.map((a) => String(a.canonicalId || a.id)).filter(Boolean);
   if (!ids.length) return articles.map((article) => ({ ...article, media: {} }));
   const scriptVersion = audioScriptVersion();
   const media = await sql`SELECT "articleId", "mediaType", status, "mediaUrl", "captionsUrl", "durationSeconds", "mimeType" FROM "ArticleMedia" WHERE "articleId" = ANY(${ids}) AND language = ${language} AND "scriptVersion" = ${scriptVersion} AND status = 'ready';`;
@@ -122,6 +122,6 @@ export async function attachMedia<T extends Record<string, unknown>>(articles: T
     current[String(item.mediaType)] = { status: String(item.status), url: String(item.mediaUrl), captionsUrl: item.captionsUrl ? String(item.captionsUrl) : undefined, durationSeconds: item.durationSeconds ? Number(item.durationSeconds) : undefined, mimeType: item.mimeType ? String(item.mimeType) : undefined };
     grouped.set(articleId, current);
   }
-  return articles.map((article) => ({ ...article, media: grouped.get(String(article.canonicalId)) || {} }));
+  return articles.map((article) => ({ ...article, media: grouped.get(String(article.canonicalId || article.id)) || {} }));
 }
 

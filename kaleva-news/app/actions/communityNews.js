@@ -2,6 +2,7 @@
 
 import { neon } from '@neondatabase/serverless';
 import { fetchAndAutoPublishAllRSS } from '@/app/actions/news';
+import { applyUserPreferences } from '@/lib/preferences/feed';
 
 const sql = neon(process.env.DATABASE_URL);
 const CURRENT_USER_ID = "current-user-id";
@@ -56,7 +57,7 @@ export async function getCommunityFeed(communityName, isVerified = true, limit =
       LIMIT ${parsedLimit} OFFSET ${parsedOffset};
     `;
 
-    return feed;
+    return applyUserPreferences(feed, CURRENT_USER_ID);
   } catch (error) {
     console.error(`Error fetching community feed for ${communityName}:`, error);
     return [];

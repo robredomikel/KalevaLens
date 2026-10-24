@@ -68,7 +68,38 @@ export default function KanbanBoard() {
   };
 
   useEffect(() => {
-    loadData();
+    let ignore = false;
+    async function init() {
+      setLoading(true);
+      try {
+        const res = await getPendingEditorialTasks();
+        if (ignore) return;
+        if (res && res.success && res.submissions && res.submissions.length > 0) {
+          const tasksByStory = new Map((res.tasks || []).map((task) => [String(task.storyId), task]));
+          const formatted = res.submissions.map((sub) => ({
+            taskId: tasksByStory.get(String(sub.id))?.id,
+            auditReason: tasksByStory.get(String(sub.id))?.taskType === 'HITL_MEDIA_AUDIT'
+              ? tasksByStory.get(String(sub.id))?.details?.error || 'Audio generation failed after all retries.'
+              : null,
+            id: sub.id,
+            stage: sub.stage ? sub.stage.toUpperCase() : 'INCOMING',
+            community: sub.community || 'Oulu',
+            title: sub.title,
+            summary: sub.summary,
+            author: sub.authorId || 'citizen',
+            aiScore: sub.aiScore || 85,
+            timestamp: sub.createdAt ? new Date(sub.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+          }));
+          setCards(formatted);
+        }
+      } catch (err) {
+        console.error("Failed to load tasks from server:", err);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    init();
+    return () => { ignore = true; };
   }, []);
 
   const moveCard = async (cardId, targetStage, decision = 'APPROVE') => {

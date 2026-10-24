@@ -4,9 +4,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { mockSectionsData } from '@/data/mockNews';
 import { trackArticleFeedback } from '@/lib/userService';
-import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
-import { getBlendedNewsFeed, markStoryAsRead } from '@/app/actions/news';
+import { markStoryAsRead } from '@/app/actions/news';
 import { getPersonalizedFeed } from '@/app/actions/personalizedNews';
 import { getBlendedOutsidePriorityFeed } from '@/app/actions/blendedNews';
 import { 
@@ -320,10 +319,9 @@ export default function FeedPage() {
     loadCommunityFeedData();
   }, [activeTab, selectedCommunity, communitySubTab]);
 
-  // Load feeds dynamically when switching tabs or changing subscriptions
+  // Load feeds dynamically when switching tabs, changing subscriptions, or updating preferences
   useEffect(() => {
     async function loadFeeds() {
-      if (subscribedCommunities.length === 0) return;
       setLoading(true);
       if (activeTab === 'my-news') {
         const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
@@ -345,11 +343,11 @@ export default function FeedPage() {
       setLoading(false);
     }
     loadFeeds();
-  }, [activeTab, subscribedCommunities]);
+  }, [activeTab, subscribedCommunities, preferenceRevision]);
 
   // Infinite scroll loader for 'My News'
   const loadMoreArticles = async () => {
-    if (isLoadingMore || !hasMore || subscribedCommunities.length === 0) return;
+    if (isLoadingMore || !hasMore) return;
     setIsLoadingMore(true);
 
     const nextOffset = pageOffset + 10;
@@ -388,29 +386,6 @@ export default function FeedPage() {
   };
 
   useEffect(() => {
-    async function loadFeed() {
-      if (activeTab === 'my-news') {
-        setLoading(true);
-        const liveStories = await getPersonalizedFeed(CURRENT_USER_ID, 10, 0);
-        setArticlesData(prev => ({
-          ...prev,
-          'my-news': liveStories
-        }));
-        setLoading(false);
-      } else if (activeTab === 'outside') {
-        setLoading(true);
-        const outsideStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
-        setArticlesData(prev => ({
-          ...prev,
-          outside: outsideStories
-        }));
-        setLoading(false);
-      }
-    }
-    loadFeed();
-  }, [activeTab, preferenceRevision]);
-
-  useEffect(() => {
     if (!isWaitingForPreferences) return;
     let refreshes = 0;
     const timer = window.setInterval(() => {
@@ -437,7 +412,7 @@ export default function FeedPage() {
     }
   }, [selectedCommunity]);
 
-  const handleCardSwipeOut = (itemId, direction) => {
+  const handleCardSwipeOut = (itemId) => {
     markStoryAsRead(CURRENT_USER_ID, itemId);
 
     setArticlesData((prevData) => {
