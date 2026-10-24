@@ -47,55 +47,82 @@ function NewsCard({
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
   const isHorizontalSwipeRef = useRef(false);
+  const isGestureActiveRef = useRef(false);
 
   const handleSheetStateChange = (isOpen) => {
     setIsSheetOpen(isOpen);
     if (onSheetToggle) onSheetToggle(isOpen);
   };
 
-  const handleTouchStart = (e) => {
+  const handlePointerDown = (e) => {
     if (!isSwipeableSection || isSheetOpen) return;
-    touchStartXRef.current = e.targetTouches[0].clientX;
-    touchStartYRef.current = e.targetTouches[0].clientY;
+    // Do not trigger swipe dragging if user is clicking/interacting with a button, link, audio, or input
+    const targetEl = e.target;
+    if (
+      targetEl.closest('button') || 
+      targetEl.closest('a') || 
+      targetEl.closest('audio') || 
+      targetEl.closest('input') || 
+      targetEl.closest('textarea')
+    ) {
+      return;
+    }
+
+    touchStartXRef.current = e.clientX;
+    touchStartYRef.current = e.clientY;
     isHorizontalSwipeRef.current = false;
+    isGestureActiveRef.current = true;
     setIsDragging(true);
   };
 
-  const handleTouchMove = (e) => {
-    if (!isSwipeableSection || !isDragging || isSheetOpen) return;
-    const currentX = e.targetTouches[0].clientX;
-    const currentY = e.targetTouches[0].clientY;
+  const handlePointerMove = (e) => {
+    if (!isSwipeableSection || !isGestureActiveRef.current || isSheetOpen) return;
+    const currentX = e.clientX;
+    const currentY = e.clientY;
     
     const diffX = currentX - touchStartXRef.current;
     const diffY = currentY - touchStartYRef.current;
 
-    if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
-      isHorizontalSwipeRef.current = true;
+    // Detect direction on initial movement threshold (10px)
+    if (!isHorizontalSwipeRef.current) {
+      if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+        isHorizontalSwipeRef.current = true;
+      } else if (Math.abs(diffY) > 10 && Math.abs(diffY) > Math.abs(diffX)) {
+        // Vertical gesture taking precedence - cancel horizontal drag
+        isGestureActiveRef.current = false;
+        setIsDragging(false);
+        setDragOffset({ x: 0, rot: 0 });
+        return;
+      }
     }
 
     if (isHorizontalSwipeRef.current) {
-      if (e.cancelable) e.preventDefault();
       const rotation = diffX * 0.03; 
       setDragOffset({ x: diffX, rot: rotation });
     }
   };
 
-  const handleTouchEnd = () => {
-    if (!isSwipeableSection || isSheetOpen) return;
-    setIsDragging(false);
-    isHorizontalSwipeRef.current = false;
+  const handlePointerUp = () => {
+    if (!isSwipeableSection || !isGestureActiveRef.current || isSheetOpen) {
+      isGestureActiveRef.current = false;
+      setIsDragging(false);
+      return;
+    }
     
-    const swipeThreshold = 180;
+    setIsDragging(false);
+    isGestureActiveRef.current = false;
+    
+    const swipeThreshold = 140;
 
-    if (Math.abs(dragOffset.x) > swipeThreshold) {
+    if (isHorizontalSwipeRef.current && Math.abs(dragOffset.x) > swipeThreshold) {
       if (dragOffset.x > 0) {
-        setDragOffset({ x: 600, rot: 30 });
+        setDragOffset({ x: 600, rot: 25 });
         setTimeout(() => {
           handleFeedback(item, 'like');
           handleCardSwipeOut(item.id, 'right');
         }, 200);
       } else {
-        setDragOffset({ x: -600, rot: -30 });
+        setDragOffset({ x: -600, rot: -25 });
         setTimeout(() => {
           handleFeedback(item, 'dislike');
           handleCardSwipeOut(item.id, 'left');
@@ -104,6 +131,7 @@ function NewsCard({
     } else {
       setDragOffset({ x: 0, rot: 0 });
     }
+    isHorizontalSwipeRef.current = false;
   };
 
   const handleVerify = async () => {
@@ -121,22 +149,23 @@ function NewsCard({
 
   return (
     <div 
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       style={{
         transform: `translateX(${dragOffset.x}px) rotate(${dragOffset.rot}deg)`,
         transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         touchAction: isSwipeableSection && !isSheetOpen ? 'pan-y' : 'auto'
       }}
-      className={`bg-slate-900 border rounded-3xl p-5 shadow-2xl flex flex-col justify-between shrink-0 h-[calc(100vh-8.5rem)] md:h-[450px] snap-center relative overflow-hidden ${
+      className={`bg-slate-900 border rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col justify-between h-full snap-start relative overflow-visible ${
         dragOffset.x > 60 ? 'border-emerald-500 bg-emerald-950/20' :
         dragOffset.x < -60 ? 'border-rose-500 bg-rose-950/20' : 'border-slate-800'
       }`}
     >
-      <div className="overflow-y-auto pr-1 scrollbar-none flex-1">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2 py-0.5 rounded">
+      <div className="flex-1 flex flex-col justify-start">
+        <div className="flex justify-between items-center mb-3">
+          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md">
             {item.community || 'Kaleva'} • {item.category || 'News'} {index === 0 && '🔥 (First)'}
           </span>
           <div className="flex items-center space-x-2">
@@ -154,7 +183,7 @@ function NewsCard({
         </div>
 
         {item.imageUrl && (
-          <div className="mb-3 rounded-2xl overflow-hidden max-h-48 w-full bg-slate-950 border border-slate-800">
+          <div className="mb-3.5 rounded-2xl overflow-hidden w-full bg-slate-950 border border-slate-800 relative aspect-[16/9] max-h-60">
             <img 
               src={item.imageUrl} 
               alt={item.title || 'Article image'} 
@@ -169,11 +198,11 @@ function NewsCard({
           </div>
         )}
 
-        <h2 className="text-lg sm:text-xl font-bold mt-1 mb-2 leading-snug text-white">
+        <h2 className="text-lg sm:text-xl font-bold mt-1 mb-2.5 leading-snug text-white">
           {item.title}
         </h2>
 
-        <div className="flex items-center space-x-2 text-[11px] text-slate-400 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 mb-3.5">
           <span>Source: <strong className="text-slate-200">{item.authorId || item.publisher || 'Kaleva'}</strong></span>
           {item.sourceUrl && (
             <a
@@ -191,7 +220,7 @@ function NewsCard({
           <p className="text-[10px] text-amber-300 mb-2 animate-pulse">Preparing your preferred language and length…</p>
         )}
 
-        <ul className="space-y-2.5 mb-4">
+        <ul className="space-y-2.5 mb-5">
           {(() => {
             const summaries = Array.isArray(item.summary) 
               ? item.summary 
@@ -199,7 +228,7 @@ function NewsCard({
 
             return summaries.map((bullet, idx) => (
               <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
-                <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
+                <span className="text-amber-400 mr-2.5 font-bold shrink-0">•</span> <span>{bullet}</span>
               </li>
             ));
           })()}
@@ -739,7 +768,7 @@ export default function FeedPage() {
         )}
 
         {/* Feed Container */}
-        <div className="w-full relative flex-1 flex justify-center max-w-md md:max-w-4xl">
+        <div className="w-full relative flex-1 flex justify-center max-w-md md:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
           {loading ? (
             <div className="text-center py-20 text-amber-400 text-xs tracking-wider uppercase animate-pulse">
               Rotating news stack...
@@ -766,9 +795,7 @@ export default function FeedPage() {
                 transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                 overscrollBehaviorY: 'contain'
               }}
-              className={`h-[calc(100vh-7rem)] md:h-[calc(100vh-2rem)] w-full overflow-y-scroll md:overflow-y-auto ${
-                activeTab === 'my-news' || activeTab === 'outside' ? 'snap-none' : 'snap-y snap-mandatory'
-              } space-y-4 md:grid md:grid-cols-2 md:gap-4 relative scrollbar-none`}
+              className="h-[calc(100vh-7rem)] md:h-[calc(100vh-2rem)] w-full overflow-y-auto snap-y snap-mandatory md:snap-none space-y-6 md:space-y-0 md:grid md:grid-cols-2 md:gap-6 relative scrollbar-none pb-20 md:pb-12"
             >
               {pullDistance > 15 && (
                 <div className="w-full py-2 flex items-center justify-center text-amber-400 text-xs font-bold bg-slate-900/90 border border-slate-800 rounded-2xl shadow-inner shrink-0 md:hidden snap-center">

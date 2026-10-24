@@ -27,8 +27,8 @@ export async function enqueuePreferredArticles(language: string, length: string,
   await ensureDatabaseSchema();
   const articles = await sql`
     INSERT INTO "ArticlePreferenceJob" (id, "storyId", "articleId", "articleVersion", language, length, status, priority)
-    SELECT md5(s.id || ':' || ${language} || ':' || ${length} || ':' || COALESCE(s."articleVersion", 'legacy')),
-      s.id, COALESCE(s."canonicalId", s.id), COALESCE(s."articleVersion", 'legacy'), ${language}, ${length}, 'pending', ${priority}
+    SELECT md5(s.id::text || ':' || ${language} || ':' || ${length} || ':' || COALESCE(s."articleVersion", 'legacy')),
+      s.id, COALESCE(s."canonicalId", s.id::text), COALESCE(s."articleVersion", 'legacy'), ${language}, ${length}, 'pending', ${priority}
     FROM (SELECT * FROM "StorySubmission" WHERE stage='PUBLISHED' ORDER BY "createdAt" DESC LIMIT 500) s
     ON CONFLICT ("articleId", "articleVersion", language, length) DO UPDATE SET
       status=CASE WHEN "ArticlePreferenceJob".status='failed' THEN 'pending' ELSE "ArticlePreferenceJob".status END,
