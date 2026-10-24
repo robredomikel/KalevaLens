@@ -2,7 +2,7 @@
 
 import { neon } from '@neondatabase/serverless';
 import { fetchAndAutoPublishAllRSS } from '@/app/actions/news';
-import { attachMedia } from '@/lib/media/repository';
+import { applyUserPreferences } from '@/lib/preferences/feed';
 
 const sql = neon(process.env.DATABASE_URL);
 
@@ -24,7 +24,7 @@ export async function getPersonalizedFeed(userId, limit = 10, offset = 0) {
         ORDER BY "createdAt" DESC
         LIMIT ${parsedLimit} OFFSET ${parsedOffset};
       `;
-      return attachMedia(feed);
+      return applyUserPreferences(feed, userId);
     }
 
     const feed = await sql`
@@ -43,7 +43,7 @@ export async function getPersonalizedFeed(userId, limit = 10, offset = 0) {
       LIMIT ${parsedLimit} OFFSET ${parsedOffset};
     `;
 
-    return attachMedia(feed);
+    return applyUserPreferences(feed, userId);
   } catch (error) {
     console.error('Error fetching feed:', error);
     return [];

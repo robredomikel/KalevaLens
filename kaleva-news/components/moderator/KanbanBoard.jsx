@@ -43,7 +43,12 @@ export default function KanbanBoard() {
     try {
       const res = await getPendingEditorialTasks();
       if (res && res.success && res.submissions && res.submissions.length > 0) {
+        const tasksByStory = new Map((res.tasks || []).map((task) => [String(task.storyId), task]));
         const formatted = res.submissions.map((sub) => ({
+          taskId: tasksByStory.get(String(sub.id))?.id,
+          auditReason: tasksByStory.get(String(sub.id))?.taskType === 'HITL_MEDIA_AUDIT'
+            ? tasksByStory.get(String(sub.id))?.details?.error || 'Audio generation failed after all retries.'
+            : null,
           id: sub.id,
           stage: sub.stage ? sub.stage.toUpperCase() : 'INCOMING',
           community: sub.community || 'Oulu',
@@ -72,6 +77,7 @@ export default function KanbanBoard() {
 
     try {
       await submitModeratorDecision({
+        taskId: cards.find((card) => card.id === cardId)?.taskId,
         storyId: cardId,
         decision,
         notes: `Moderator moved card to ${targetStage}`,

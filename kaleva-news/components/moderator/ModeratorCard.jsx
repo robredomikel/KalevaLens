@@ -25,6 +25,12 @@ export default function ModeratorCard({ card, onMoveCard }) {
           {card.title}
         </h3>
 
+        {card.auditReason && (
+          <div className="mb-2 rounded-xl border border-rose-500/40 bg-rose-500/10 p-2 text-[10px] text-rose-300">
+            <span className="font-bold">Audio audit:</span> {card.auditReason}
+          </div>
+        )}
+
         <p className="text-xs text-slate-400 line-clamp-3 mb-2">
           {card.summary}
         </p>

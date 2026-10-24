@@ -14,8 +14,10 @@ export async function register() {
     running = true;
     try {
       const { processMediaJobs, reconcileMediaJobs } = await import("@/lib/media/jobs");
+      const { processArticlePreferenceJobs } = await import("@/lib/preferences/service");
       if (reconcile) await reconcileMediaJobs((process.env.MEDIA_LANGUAGES || "en").split(",").map((value) => value.trim()).filter(Boolean));
       await processMediaJobs();
+      await processArticlePreferenceJobs();
     } catch (error) {
       console.error("[DEMO MEDIA WORKER] Processing failed:", error);
     } finally {

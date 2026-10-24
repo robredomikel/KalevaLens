@@ -7,9 +7,10 @@ import { ensureDatabaseSchema } from '@/lib/db/init';
 import { runIngestionAgent } from '@/lib/ai/agents/ingestion';
 import { runPersonalizationAgent } from '@/lib/ai/agents/personalization';
 import { editorialWorkflowApp } from '@/lib/ai/workflows/editorial';
-import { attachMedia, enqueueArticleMedia } from '@/lib/media/repository';
+import { enqueueArticleMedia } from '@/lib/media/repository';
 import { canonicalArticleId, articleVersion } from '@/lib/media/identity';
 import { getMediaConfig } from '@/lib/ai/models';
+import { applyUserPreferences } from '@/lib/preferences/feed';
 
 const sql = neon(process.env.DATABASE_URL);
 const parser = new RSSParser();
@@ -102,7 +103,7 @@ export async function getBlendedNewsFeed(userId, limit = 10, offset = 0) {
         )
         SELECT * FROM Combined ORDER BY "createdAt" DESC;
       `;
-      return attachMedia(feed);
+      return applyUserPreferences(feed, userId);
     }
 
     const blendedFeed = await sql`
@@ -125,7 +126,7 @@ export async function getBlendedNewsFeed(userId, limit = 10, offset = 0) {
       ORDER BY read_priority ASC, "createdAt" DESC;
     `;
 
-    return attachMedia(blendedFeed);
+    return applyUserPreferences(blendedFeed, userId);
   } catch (error) {
     console.error('Error fetching blended news feed:', error);
     return [];
@@ -214,6 +215,7 @@ export async function submitModeratorDecision({
   await ensureDatabaseSchema();
 
   try {
+    const taskRows = taskId ? await sql`SELECT "workflowId", "taskType", details FROM "EditorialTask" WHERE id=${taskId} LIMIT 1;` : [];
     const newStage = decision === 'APPROVE' ? 'PUBLISHED' : decision === 'REJECT' ? 'REJECTED' : 'REVIEW';
 
     // 1. Update StorySubmission in database
@@ -222,7 +224,10 @@ export async function submitModeratorDecision({
       SET stage = ${newStage}, "updatedAt" = CURRENT_TIMESTAMP
       WHERE id = ${storyId};
     `;
-    if (decision === 'APPROVE') await enqueueArticleMedia(storyId, 'en', 20);
+    if (decision === 'APPROVE') {
+      const audioLanguage = taskRows[0]?.taskType === 'HITL_MEDIA_AUDIT' ? taskRows[0]?.details?.language || 'en' : 'en';
+      await enqueueArticleMedia(storyId, audioLanguage, 20);
+    }
 
     // 2. Update EditorialTask if taskId supplied
     if (taskId) {
@@ -235,9 +240,6 @@ export async function submitModeratorDecision({
 
     // 3. Resume LangGraph Workflow if thread exists
     try {
-      const taskRows = await sql`
-        SELECT "workflowId" FROM "EditorialTask" WHERE id = ${taskId} LIMIT 1;
-      `;
       if (taskRows.length > 0) {
         const workflowId = taskRows[0].workflowId;
         await editorialWorkflowApp.invoke(

@@ -10,6 +10,7 @@ import { markStoryAsRead } from '@/app/actions/news';
 import { getPersonalizedFeed } from '@/app/actions/personalizedNews';
 import { getBlendedOutsidePriorityFeed } from '@/app/actions/blendedNews';
 import ArticleMediaControls from '@/components/ArticleMediaControls';
+import PreferencesModal from '@/components/PreferencesModal';
 
 const CURRENT_USER_ID = "123";
 
@@ -112,6 +113,10 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
           {item.title}
         </h2>
 
+        {item.preferredContentReady === false && (
+          <p className="text-[10px] text-amber-300 mb-2 animate-pulse">Preparing your preferred language and length…</p>
+        )}
+
         <ul className="space-y-2.5 mb-4">
           {(() => {
             const summaries = Array.isArray(item.summary) 
@@ -199,6 +204,9 @@ export default function FeedPage() {
   const [communitySubTab, setCommunitySubTab] = useState('verified');
   
   const [isManagingCommunities, setIsManagingCommunities] = useState(false);
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [preferenceRevision, setPreferenceRevision] = useState(0);
+  const [isWaitingForPreferences, setIsWaitingForPreferences] = useState(false);
   const [communitySearchQuery, setCommunitySearchQuery] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -235,7 +243,7 @@ useEffect(() => {
   async function loadFeeds() {
     if (activeTab === 'outside') {
       setLoading(true);
-      const blendedStories = await getBlendedNewsFeed('current-user-id', 10, 0);
+      const blendedStories = await getBlendedNewsFeed(CURRENT_USER_ID, 10, 0);
       setArticlesData(prev => ({
         ...prev,
         outside: blendedStories
@@ -254,7 +262,7 @@ useEffect(() => {
   async function loadFeeds() {
     setLoading(true);
     if (activeTab === 'my-news') {
-      const stories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, 0);
+      const stories = await getPersonalizedFeed(CURRENT_USER_ID, 10, 0);
       setArticlesData(prev => ({
         ...prev,
         'my-news': stories
@@ -281,7 +289,7 @@ const loadMoreArticles = async () => {
   setIsLoadingMore(true);
 
   const nextOffset = pageOffset + 10;
-  const moreStories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, nextOffset);
+  const moreStories = await getPersonalizedFeed(CURRENT_USER_ID, 10, nextOffset);
 
   if (moreStories.length === 0) {
     setHasMore(false);
@@ -321,7 +329,7 @@ const loadMoreOutsideArticles = async () => {
     async function loadFeed() {
       if (activeTab === 'my-news') {
         setLoading(true);
-        const liveStories = await getPersonalizedFeed('current-user-id', 10, 0);
+        const liveStories = await getPersonalizedFeed(CURRENT_USER_ID, 10, 0);
         setArticlesData(prev => ({
           ...prev,
           'my-news': liveStories
@@ -338,7 +346,21 @@ const loadMoreOutsideArticles = async () => {
       }
     }
     loadFeed();
-  }, [activeTab]);
+  }, [activeTab, preferenceRevision]);
+
+  useEffect(() => {
+    if (!isWaitingForPreferences) return;
+    let refreshes = 0;
+    const timer = window.setInterval(() => {
+      refreshes += 1;
+      setPreferenceRevision((value) => value + 1);
+      if (refreshes >= 12) {
+        window.clearInterval(timer);
+        setIsWaitingForPreferences(false);
+      }
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [isWaitingForPreferences]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -571,6 +593,9 @@ const loadMoreOutsideArticles = async () => {
             >
               <span>✍️</span> <span>Published by Me</span>
             </button>
+            <button onClick={() => setIsPreferencesOpen(true)} className="w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center space-x-3 text-slate-400 hover:bg-slate-800 hover:text-white">
+              <span>⚙️</span> <span>Preferences</span>
+            </button>
           </nav>
         </div>
 
@@ -738,7 +763,12 @@ const loadMoreOutsideArticles = async () => {
             <span className="text-base">✍️</span>
             <span className="text-[10px] mt-0.5">Published</span>
           </button>
+          <button onClick={() => setIsPreferencesOpen(true)} className="flex flex-col items-center flex-1 py-1 text-slate-400 hover:text-white transition">
+            <span className="text-base">⚙️</span><span className="text-[10px] mt-0.5">Preferences</span>
+          </button>
         </nav>
+
+        <PreferencesModal userId={CURRENT_USER_ID} open={isPreferencesOpen} onClose={() => setIsPreferencesOpen(false)} onSaved={() => { setPreferenceRevision((value) => value + 1); setIsWaitingForPreferences(true); }} />
 
         {/* MANAGE COMMUNITIES MODAL */}
         {isManagingCommunities && (

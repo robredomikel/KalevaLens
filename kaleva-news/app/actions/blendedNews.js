@@ -2,7 +2,7 @@
 
 import { neon } from '@neondatabase/serverless';
 import { fetchAndAutoPublishAllRSS } from '@/app/actions/news';
-import { attachMedia } from '@/lib/media/repository';
+import { applyUserPreferences } from '@/lib/preferences/feed';
 
 const sql = neon(process.env.DATABASE_URL);
 
@@ -41,7 +41,7 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
         )
         SELECT * FROM CombinedOutsideFeed ORDER BY "createdAt" DESC;
       `;
-      return attachMedia(feed);
+      return applyUserPreferences(feed, userId);
     }
 
     // Query with explicit read history ranking using validated userId
@@ -78,7 +78,7 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
       ORDER BY read_priority ASC, "createdAt" DESC;
     `;
 
-    return attachMedia(blendedFeed);
+    return applyUserPreferences(blendedFeed, userId);
   } catch (error) {
     console.error('Error fetching blended outside priority feed:', error);
     return [];

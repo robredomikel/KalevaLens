@@ -185,6 +185,41 @@ export async function ensureDatabaseSchema() {
     `;
     await sql`CREATE INDEX IF NOT EXISTS "MediaJob_claim_idx" ON "MediaJob" (status, "runAfter", priority DESC);`;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS "UserPreference" (
+        "userId" TEXT PRIMARY KEY,
+        "audioLanguage" TEXT NOT NULL DEFAULT 'en',
+        "articleLanguage" TEXT NOT NULL DEFAULT 'en',
+        "articleLength" TEXT NOT NULL DEFAULT 'standard',
+        "audioDurationSeconds" INT NOT NULL DEFAULT 30,
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "ArticlePreferenceVariant" (
+        id TEXT PRIMARY KEY, "articleId" TEXT NOT NULL, "articleVersion" TEXT NOT NULL,
+        language TEXT NOT NULL, length TEXT NOT NULL, title TEXT NOT NULL,
+        summary JSONB NOT NULL, content TEXT NOT NULL, model TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ready',
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("articleId", "articleVersion", language, length)
+      );
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "ArticlePreferenceJob" (
+        id TEXT PRIMARY KEY, "storyId" TEXT NOT NULL, "articleId" TEXT NOT NULL,
+        "articleVersion" TEXT NOT NULL, language TEXT NOT NULL, length TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', priority INT NOT NULL DEFAULT 0,
+        attempts INT NOT NULL DEFAULT 0, "runAfter" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "lastError" TEXT, "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("articleId", "articleVersion", language, length)
+      );
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS "ArticlePreferenceJob_claim_idx" ON "ArticlePreferenceJob" (status, "runAfter", priority DESC);`;
+
     isInitialized = true;
   } catch (err) {
     console.error("Error initializing database tables:", err);

@@ -5,8 +5,9 @@ import { ensureDatabaseSchema } from "@/lib/db/init";
 import { getMediaConfig } from "@/lib/ai/models";
 import { MediaArticle, MediaType, NarrationScript, ProducedMedia } from "./types";
 import { articleVersion as calculateVersion, canonicalArticleId } from "./identity";
+import { audioScriptVersion } from "@/lib/preferences/config";
 
-export const SCRIPT_VERSION = "grounded-30s-v1";
+export const SCRIPT_VERSION = audioScriptVersion();
 
 function toPlainText(value: unknown) {
   return String(value || "")
@@ -43,11 +44,12 @@ export async function enqueueArticleMedia(storyId: string, language = "en", prio
   const version = calculateVersion(row);
   await sql`UPDATE "StorySubmission" SET "canonicalId" = ${articleId}, "articleVersion" = ${version} WHERE id = ${storyId};`;
   const config = getMediaConfig();
+  const scriptVersion = audioScriptVersion();
   const types: MediaType[] = config.audioEnabled ? ["audio"] : [];
   for (const type of types) {
     await sql`
       INSERT INTO "MediaJob" (id, "articleId", "articleVersion", language, "mediaType", "scriptVersion", status, priority, "maxAttempts")
-      VALUES (${randomUUID()}, ${articleId}, ${version}, ${language}, ${type}, ${SCRIPT_VERSION}, 'pending', ${priority + (type === "audio" ? 10 : 0)}, ${config.maxRetries})
+      VALUES (${randomUUID()}, ${articleId}, ${version}, ${language}, ${type}, ${scriptVersion}, 'pending', ${priority + (type === "audio" ? 10 : 0)}, ${config.maxRetries})
       ON CONFLICT ("articleId", "articleVersion", language, "mediaType", "scriptVersion") DO UPDATE SET
         status = CASE WHEN "MediaJob".status IN ('failed', 'cancelled') THEN 'pending' ELSE "MediaJob".status END,
         attempts = CASE WHEN "MediaJob".status IN ('failed', 'cancelled') THEN 0 ELSE "MediaJob".attempts END,
@@ -82,18 +84,18 @@ export async function getMediaArticle(articleId: string, version: string, langua
   };
 }
 
-export async function getOrCreateScript(article: MediaArticle, create: () => Promise<{ script: NarrationScript; model: string }>) {
-  const existing = await sql`SELECT script, model FROM "NarrationScript" WHERE "articleId" = ${article.canonicalId} AND "articleVersion" = ${article.version} AND language = ${article.language} AND "scriptVersion" = ${SCRIPT_VERSION} LIMIT 1;`;
+export async function getOrCreateScript(article: MediaArticle, scriptVersion: string, create: () => Promise<{ script: NarrationScript; model: string }>) {
+  const existing = await sql`SELECT script, model FROM "NarrationScript" WHERE "articleId" = ${article.canonicalId} AND "articleVersion" = ${article.version} AND language = ${article.language} AND "scriptVersion" = ${scriptVersion} LIMIT 1;`;
   if (existing.length) return { script: existing[0].script as NarrationScript, model: existing[0].model as string };
   const generated = await create();
-  await sql`INSERT INTO "NarrationScript" (id, "articleId", "articleVersion", language, "scriptVersion", script, model, "approvedAt") VALUES (${randomUUID()}, ${article.canonicalId}, ${article.version}, ${article.language}, ${SCRIPT_VERSION}, ${JSON.stringify(generated.script)}, ${generated.model}, CURRENT_TIMESTAMP) ON CONFLICT ("articleId", "articleVersion", language, "scriptVersion") DO NOTHING;`;
+  await sql`INSERT INTO "NarrationScript" (id, "articleId", "articleVersion", language, "scriptVersion", script, model, "approvedAt") VALUES (${randomUUID()}, ${article.canonicalId}, ${article.version}, ${article.language}, ${scriptVersion}, ${JSON.stringify(generated.script)}, ${generated.model}, CURRENT_TIMESTAMP) ON CONFLICT ("articleId", "articleVersion", language, "scriptVersion") DO NOTHING;`;
   return generated;
 }
 
-export async function saveMedia(article: MediaArticle, type: MediaType, media: ProducedMedia, stored: { key: string; url: string; size: number }) {
+export async function saveMedia(article: MediaArticle, type: MediaType, media: ProducedMedia, stored: { key: string; url: string; size: number }, scriptVersion = SCRIPT_VERSION) {
   await sql`
     INSERT INTO "ArticleMedia" (id, "articleId", "articleVersion", language, "mediaType", status, "storageKey", "mediaUrl", "captionsUrl", "mimeType", "durationSeconds", "fileSize", voice, resolution, "generationModel", "generationMethod", "scriptVersion")
-    VALUES (${randomUUID()}, ${article.canonicalId}, ${article.version}, ${article.language}, ${type}, 'ready', ${stored.key}, ${stored.url}, NULL, ${media.mimeType}, ${media.durationSeconds}, ${stored.size}, ${media.voice || null}, NULL, ${media.model || null}, ${media.method}, ${SCRIPT_VERSION})
+    VALUES (${randomUUID()}, ${article.canonicalId}, ${article.version}, ${article.language}, ${type}, 'ready', ${stored.key}, ${stored.url}, NULL, ${media.mimeType}, ${media.durationSeconds}, ${stored.size}, ${media.voice || null}, NULL, ${media.model || null}, ${media.method}, ${scriptVersion})
     ON CONFLICT ("articleId", "articleVersion", language, "mediaType", "scriptVersion") DO UPDATE SET status='ready', "storageKey"=EXCLUDED."storageKey", "mediaUrl"=EXCLUDED."mediaUrl", "captionsUrl"=EXCLUDED."captionsUrl", "mimeType"=EXCLUDED."mimeType", "durationSeconds"=EXCLUDED."durationSeconds", "fileSize"=EXCLUDED."fileSize", voice=EXCLUDED.voice, resolution=EXCLUDED.resolution, "generationModel"=EXCLUDED."generationModel", "generationMethod"=EXCLUDED."generationMethod", "errorMessage"=NULL, "updatedAt"=CURRENT_TIMESTAMP;
   `;
 }
@@ -104,8 +106,9 @@ export async function attachMedia<T extends Record<string, unknown>>(articles: T
   if (!articles.length) return articles;
   const ids = articles.map((a) => a.canonicalId).filter(Boolean);
   if (!ids.length) return articles.map((article) => ({ ...article, media: {} }));
-  const media = await sql`SELECT "articleId", "mediaType", status, "mediaUrl", "captionsUrl", "durationSeconds", "mimeType" FROM "ArticleMedia" WHERE "articleId" = ANY(${ids}) AND language = ${language} AND status = 'ready';`;
-  const jobs = await sql`SELECT "articleId", "mediaType", status FROM "MediaJob" WHERE "articleId" = ANY(${ids}) AND language = ${language} AND "scriptVersion" = ${SCRIPT_VERSION};`;
+  const scriptVersion = audioScriptVersion();
+  const media = await sql`SELECT "articleId", "mediaType", status, "mediaUrl", "captionsUrl", "durationSeconds", "mimeType" FROM "ArticleMedia" WHERE "articleId" = ANY(${ids}) AND language = ${language} AND "scriptVersion" = ${scriptVersion} AND status = 'ready';`;
+  const jobs = await sql`SELECT "articleId", "mediaType", status FROM "MediaJob" WHERE "articleId" = ANY(${ids}) AND language = ${language} AND "scriptVersion" = ${scriptVersion};`;
   const grouped = new Map<string, Record<string, FeedMedia>>();
   for (const item of jobs) {
     const articleId = String(item.articleId);

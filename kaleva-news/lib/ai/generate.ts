@@ -30,6 +30,11 @@ export async function generateAgentStructured<T>(
   const startTime = Date.now();
   const modelName = getAgentModel(options.agentName);
   const config = getWorkflowConfig();
+  const inferredJsonSchema = options.schema ? z.toJSONSchema(options.schema) as Record<string, unknown> : undefined;
+  // Gemini accepts standard JSON Schema but does not need the dialect marker
+  // emitted by Zod. Supplying the schema prevents agents from returning the
+  // shape of a different workflow step.
+  if (inferredJsonSchema) delete inferredJsonSchema.$schema;
 
   // If Gemini API is not configured and a fallback response was supplied, use it
   if (!isGeminiConfigured()) {
@@ -58,7 +63,7 @@ export async function generateAgentStructured<T>(
         config: {
           systemInstruction: options.systemInstruction,
           responseMimeType: options.schema ? "application/json" : "text/plain",
-          responseJsonSchema: options.responseJsonSchema,
+          responseJsonSchema: options.responseJsonSchema || inferredJsonSchema,
         },
       });
 
@@ -75,13 +80,13 @@ export async function generateAgentStructured<T>(
       });
 
       const rawText = response.text || "";
-      let parsedData: any = rawText;
+      let parsedData: unknown = rawText;
 
       if (options.schema) {
-        let jsonObject: any;
+        let jsonObject: unknown;
         try {
           jsonObject = JSON.parse(rawText);
-        } catch (jsonErr) {
+        } catch {
           // Attempt to extract JSON code block if returned with markdown
           const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
           if (jsonMatch) {
@@ -109,9 +114,10 @@ export async function generateAgentStructured<T>(
           : undefined,
         durationMs,
       };
-    } catch (err: any) {
-      lastError = err;
-      console.error(`[GEMINI RETRY] Agent ${options.agentName} attempt ${attempt} failed: ${err.message}`);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      lastError = error;
+      console.error(`[GEMINI RETRY] Agent ${options.agentName} attempt ${attempt} failed: ${error.message}`);
       
       // Exponential backoff
       if (attempt < config.maxRetries) {

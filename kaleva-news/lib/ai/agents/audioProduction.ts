@@ -6,9 +6,9 @@ import { pcmToMp3, trimMp3 } from "@/lib/media/ffmpeg";
 import { NarrationScript, ProducedMedia } from "@/lib/media/types";
 import { narrationText } from "./newsNarration";
 
-export async function runAudioProductionAgent(script: NarrationScript): Promise<ProducedMedia> {
+export async function runAudioProductionAgent(script: NarrationScript, requestedDurationSeconds?: number): Promise<ProducedMedia> {
   const model = getMediaModels().audio;
-  const maxDuration = getMediaConfig().maxAudioDurationSeconds;
+  const maxDuration = Math.min(getMediaConfig().maxAudioDurationSeconds, Math.max(5, Number(requestedDurationSeconds || getMediaConfig().maxAudioDurationSeconds)));
   const voice = process.env.MEDIA_TTS_VOICE || "Kore";
   const maxWords = Math.max(20, Math.floor(maxDuration * 2));
   const spokenText = narrationText(script).trim().split(/\s+/).slice(0, maxWords).join(" ");
