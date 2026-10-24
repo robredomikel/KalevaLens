@@ -4,6 +4,7 @@ import { mockSectionsData } from '@/data/mockNews';
 import { trackArticleFeedback } from '@/lib/userService';
 import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
+import { getPriorityNewsFeed, markStoryAsRead } from '@/app/actions/news';
 
 // ─── EXTRACTED CARD COMPONENT ───
 function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handleCardSwipeOut, onSheetToggle }) {
@@ -104,12 +105,19 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
         </h2>
 
         <ul className="space-y-2.5 mb-4">
-          {item.summary && item.summary.map((bullet, idx) => (
-            <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
-              <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
-            </li>
-          ))}
-        </ul>
+  {(() => {
+    // Convert summary to an array if it's a string, or split by newline/sentences if needed
+    const summaries = Array.isArray(item.summary) 
+      ? item.summary 
+      : item.summary ? [item.summary] : [];
+
+    return summaries.map((bullet, idx) => (
+      <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
+        <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
+      </li>
+    ));
+  })()}
+</ul>
 
         {isSwipeableSection && (
           <div className="text-[10px] text-slate-500 text-center italic mt-2">
@@ -218,10 +226,29 @@ export default function FeedPage() {
   const [newPubTitle, setNewPubTitle] = useState('');
   const [newPubContent, setNewPubContent] = useState('');
   const [newPubCommunity, setSelectedPubCommunity] = useState('Oulu Tech Hub');
+  const [pageOffset, setPageOffset] = useState(0);
+const [hasMore, setHasMore] = useState(true);
+const [isLoadingMore, setIsLoadingMore] = useState(false);
+
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
 
+  // Inside your FeedPage component:
+useEffect(() => {
+  async function loadFeed() {
+    setLoading(true);
+    const liveStories = await getPriorityNewsFeed('current-user-id'); // Replace with actual logged-in user ID or state
+    setArticlesData(prev => ({
+      ...prev,
+      'my-news': liveStories
+    }));
+    setLoading(false);
+  }
+  loadFeed();
+}, [activeTab]);
+
+  
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       const activeBtn = communityButtonRefs.current[selectedCommunity];
@@ -235,6 +262,26 @@ export default function FeedPage() {
     }
   }, [selectedCommunity]);
 
+  const loadMoreArticles = async () => {
+  if (isLoadingMore || !hasMore) return;
+  setIsLoadingMore(true);
+
+  const nextOffset = pageOffset + 10;
+  const moreStories = await getPriorityNewsFeed('current-user-id', 10, nextOffset);
+
+  if (moreStories.length === 0) {
+    setHasMore(false);
+  } else {
+    setArticlesData(prev => ({
+      ...prev,
+      [activeTab]: [...(prev[activeTab] || []), ...moreStories]
+    }));
+    setPageOffset(nextOffset);
+  }
+  setIsLoadingMore(false);
+};
+
+  
   const handleCardSwipeOut = (itemId, direction) => {
     setArticlesData((prevData) => {
       const currentList = prevData[activeTab] || [];
@@ -519,6 +566,12 @@ export default function FeedPage() {
           ) : (
             <div 
               ref={containerRef}
+              onScroll={(e) => {
+    const target = e.currentTarget;
+    if (target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
+      loadMoreArticles();
+    }
+  }}
               style={{
                 transform: `translateY(${pullDistance}px)`,
                 transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
@@ -548,6 +601,11 @@ export default function FeedPage() {
               ))}
             </div>
           )}
+           {isLoadingMore && (
+    <div className="text-center py-4 text-amber-400 text-xs animate-pulse">
+      Loading more unseen news...
+    </div>
+  )}
         </div>
 
         {/* ─── FLOATING ACTION BUTTON (FAB) ─── */}
