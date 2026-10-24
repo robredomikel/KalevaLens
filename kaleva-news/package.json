@@ -4,25 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 3000",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "typecheck": "tsc --noEmit",
-    "test": "NODE_ENV=test node --conditions=react-server --import tsx --test tests/*.test.ts",
-    "db:migrate": "prisma migrate deploy",
-    "db:generate": "prisma generate"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@google/genai": "^2.31.0",
-    "@langchain/langgraph": "^1.5.2",
-    "@langchain/langgraph-checkpoint-postgres": "^1.1.2",
+    "@neondatabase/serverless": "^1.2.0",
     "@prisma/client": "^5.19.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "rss-parser": "^3.13.0",
-    "server-only": "^0.0.1",
-    "zod": "^4.6.7"
+    "rss-parser": "^3.13.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
@@ -33,7 +25,6 @@
     "eslint-config-next": "16.4.3",
     "prisma": "^5.19.0",
     "tailwindcss": "^4",
-    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

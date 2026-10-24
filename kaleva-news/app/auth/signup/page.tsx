@@ -1,25 +1,27 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { createEmptyProfile, saveUserProfile, setSession } from '@/lib/profile';
 
 export default function SignupPage() {
-  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [community, setCommunity] = useState('Oulu Tech Hub');
 
-  const handleSignup = async (e: FormEvent<HTMLFormElement>) => {
+  const communities = [
+    'Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture', 
+    'Oulu Startup Founders', 'University Students Oulu', 'Northern Finland Real Estate'
+  ];
+
+  const handleSignup = (e) => {
     e.preventDefault();
     if (!name || !email || !password) {
       alert("Please complete all fields.");
       return;
     }
-    const session = setSession(email, name);
-    try { await fetch('/api/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, name }) }); } catch { /* Browser prototype remains usable without PostgreSQL. */ }
-    saveUserProfile(createEmptyProfile(session.userId));
-    router.push('/onboarding');
+    // Mock customer registration action
+    alert(`Account created successfully for ${name} (@${community})!`);
+    window.location.href = '/';
   };
 
   return (
@@ -70,6 +72,19 @@ export default function SignupPage() {
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-slate-300 mb-1">Primary Community</label>
+            <select 
+              value={community}
+              onChange={(e) => setCommunity(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400"
+            >
+              {communities.map((comm) => (
+                <option key={comm} value={comm}>@{comm}</option>
+              ))}
+            </select>
           </div>
 
           <button 

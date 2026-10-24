@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 
-export default function CommentSections() {
+export default function CommentSections({ articleId }) {
   const [isOpen, setIsOpen] = useState(false); // Toggle state for mobile view
   const [comments, setComments] = useState([
     {

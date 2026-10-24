@@ -1,24 +1,20 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { getUserProfile, setSession } from '@/lib/profile';
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
+  const handleLogin = (e) => {
     e.preventDefault();
     if (!email || !password) {
       alert("Please fill in all fields.");
       return;
     }
-    const session = setSession(email);
-    try { await fetch('/api/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }); } catch { /* Browser prototype remains usable without PostgreSQL. */ }
-    const profile = getUserProfile(session.userId);
-    router.push(profile?.onboardingCompleted ? '/' : '/onboarding');
+    // Mock customer login action
+    alert(`Welcome back, ${email}! Logging into Kaleva Micro-News...`);
+    window.location.href = '/';
   };
 
   return (
@@ -69,7 +65,7 @@ export default function LoginPage() {
 
         {/* Footer Link */}
         <div className="mt-6 text-center text-xs text-slate-400">
-          Don&apos;t have an account?{' '}
+          Don't have an account?{' '}
           <Link href="/auth/signup" className="text-amber-400 font-bold hover:underline">
             Create account
           </Link>

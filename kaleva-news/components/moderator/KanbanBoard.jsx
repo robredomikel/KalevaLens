@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import ModeratorCard from './ModeratorCard';
 
 const initialKanbanCards = [
@@ -34,41 +34,9 @@ const initialKanbanCards = [
 
 export default function KanbanBoard() {
   const [cards, setCards] = useState(initialKanbanCards);
-  const [usingFallback, setUsingFallback] = useState(true);
 
-  const loadTasks = async () => {
-    try {
-      const response = await fetch('/api/editorial/tasks', { cache: 'no-store' });
-      if (!response.ok) return;
-      const tasks = await response.json();
-      setCards(tasks.map((task) => ({
-        id: task.id,
-        stage: task.status === 'PENDING' ? (task.checkpoint === 'SOURCE_REVIEW' ? 'incoming' : 'review') : task.status === 'APPROVED' ? 'published' : 'rejected',
-        community: task.candidate?.communityId || 'Editorial workflow',
-        category: task.checkpoint === 'SOURCE_REVIEW' ? 'Source Investigation' : task.checkpoint === 'CORRECTION_REVIEW' ? 'Correction Review' : 'AI Draft Review',
-        title: task.articleVersion?.headline || task.candidate?.title || 'Editorial review task',
-        summary: task.reason || task.articleVersion?.lead || 'Review the supporting material and record an editorial decision.',
-        author: 'KalevaLens workflow', timestamp: new Date(task.createdAt).toLocaleString(), persisted: true,
-      })));
-      setUsingFallback(false);
-    } catch { /* Keep the labeled development fixtures available. */ }
-  };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => { void loadTasks(); }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  const decideCard = async (cardId, action) => {
-    const card = cards.find((item) => item.id === cardId);
-    if (!card?.persisted) {
-      const stage = action === 'approve' ? (card.stage === 'incoming' ? 'review' : 'published') : action === 'reject' ? 'rejected' : card.stage;
-      setCards(cards.map(c => c.id === cardId ? { ...c, stage } : c));
-      return;
-    }
-    const response = await fetch(`/api/editorial/tasks/${cardId}/decision`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, notes: `Moderator selected ${action.replace('_', ' ')}.` }) });
-    if (!response.ok) { const body = await response.json(); alert(body.error || 'Editorial transition failed.'); return; }
-    await loadTasks();
+  const moveCard = (cardId, newStage) => {
+    setCards(cards.map(c => c.id === cardId ? { ...c, stage: newStage } : c));
   };
 
   const columns = [
@@ -78,9 +46,7 @@ export default function KanbanBoard() {
   ];
 
   return (
-    <div>
-      {usingFallback && <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">Development fixtures are shown because persistent editorial tasks are unavailable.</div>}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full items-start">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full items-start">
       {columns.map(col => {
         const colCards = cards.filter(c => {
           if (col.id === 'published') {
@@ -105,14 +71,13 @@ export default function KanbanBoard() {
                 </div>
               ) : (
                 colCards.map(card => (
-                  <ModeratorCard key={card.id} card={card} onDecision={decideCard} />
+                  <ModeratorCard key={card.id} card={card} onMoveCard={moveCard} />
                 ))
               )}
             </div>
           </div>
         );
       })}
-      </div>
     </div>
   );
 }

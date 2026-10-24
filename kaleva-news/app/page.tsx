@@ -1,14 +1,10 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck -- Legacy prototype feed remains JavaScript-shaped; new server architecture is strictly typed.
 'use client';
 import { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { mockSectionsData } from '@/data/mockNews';
-import { getAvailableCommunities } from '@/data/communities';
-import { getSession, getUserProfile } from '@/lib/profile';
 import { trackArticleFeedback } from '@/lib/userService';
+import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
+import { getPriorityNewsFeed, markStoryAsRead } from '@/app/actions/news';
 
 // ─── EXTRACTED CARD COMPONENT ───
 function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handleCardSwipeOut, onSheetToggle }) {
@@ -19,28 +15,51 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
   const [isDragging, setIsDragging] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const cardRef = useRef(null);
-  const activeTouchRef = useRef(null);
-  const touchStartRef = useRef({ x: 0, y: 0 });
-  const dragOffsetRef = useRef(0);
-  const dragAxisRef = useRef(null);
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const isHorizontalSwipeRef = useRef(false);
 
   const handleSheetStateChange = (isOpen) => {
     setIsSheetOpen(isOpen);
     if (onSheetToggle) onSheetToggle(isOpen);
   };
 
-  const completeSwipe = (cancelled = false) => {
-    const offsetX = dragOffsetRef.current;
-    activeTouchRef.current = null;
-    dragAxisRef.current = null;
+  const handleTouchStart = (e) => {
+    if (!isSwipeableSection || isSheetOpen) return;
+    touchStartXRef.current = e.targetTouches[0].clientX;
+    touchStartYRef.current = e.targetTouches[0].clientY;
+    isHorizontalSwipeRef.current = false;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isSwipeableSection || !isDragging || isSheetOpen) return;
+    const currentX = e.targetTouches[0].clientX;
+    const currentY = e.targetTouches[0].clientY;
+    
+    const diffX = currentX - touchStartXRef.current;
+    const diffY = currentY - touchStartYRef.current;
+
+    if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
+      isHorizontalSwipeRef.current = true;
+    }
+
+    if (isHorizontalSwipeRef.current) {
+      if (e.cancelable) e.preventDefault();
+      const rotation = diffX * 0.03; 
+      setDragOffset({ x: diffX, rot: rotation });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isSwipeableSection || isSheetOpen) return;
     setIsDragging(false);
+    isHorizontalSwipeRef.current = false;
+    
+    const swipeThreshold = 180;
 
-    const cardWidth = cardRef.current?.offsetWidth || 400;
-    const swipeThreshold = Math.min(140, cardWidth * 0.32);
-
-    if (!cancelled && Math.abs(offsetX) > swipeThreshold) {
-      if (offsetX > 0) {
+    if (Math.abs(dragOffset.x) > swipeThreshold) {
+      if (dragOffset.x > 0) {
         setDragOffset({ x: 600, rot: 30 });
         setTimeout(() => {
           handleFeedback(item, 'like');
@@ -54,117 +73,15 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
         }, 200);
       }
     } else {
-      dragOffsetRef.current = 0;
       setDragOffset({ x: 0, rot: 0 });
     }
   };
 
-  // Safari may make React's delegated touchmove listener passive. Registering
-  // directly on the card lets us cancel horizontal page panning on iOS.
-  useEffect(() => {
-    const card = cardRef.current;
-    if (!card || !isSwipeableSection || isSheetOpen) return;
-
-    const findTouch = (touches) => Array.from(touches).find(
-      (touch) => touch.identifier === activeTouchRef.current
-    );
-
-    const onTouchStart = (e) => {
-      if (e.touches.length !== 1) return;
-      if (e.target.closest?.('button, input, textarea, a, select')) return;
-      const touch = e.touches[0];
-      activeTouchRef.current = touch.identifier;
-      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
-      dragOffsetRef.current = 0;
-      dragAxisRef.current = null;
-      setIsDragging(true);
-    };
-
-    const onTouchMove = (e) => {
-      const touch = findTouch(e.touches);
-      if (!touch) return;
-      const diffX = touch.clientX - touchStartRef.current.x;
-      const diffY = touch.clientY - touchStartRef.current.y;
-
-      if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
-        dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
-      }
-
-      if (dragAxisRef.current === 'x') {
-        e.preventDefault();
-        dragOffsetRef.current = diffX;
-        setDragOffset({ x: diffX, rot: diffX * 0.03 });
-      }
-    };
-
-    const onTouchEnd = (e) => {
-      if (!findTouch(e.changedTouches)) return;
-      completeSwipe(false);
-    };
-
-    const onTouchCancel = (e) => {
-      if (!findTouch(e.changedTouches)) return;
-      // WebKit can emit touchcancel when a finger leaves the original nested
-      // scroll area. Keep a confirmed horizontal swipe instead of discarding it.
-      completeSwipe(dragAxisRef.current !== 'x');
-    };
-
-    card.addEventListener('touchstart', onTouchStart, { passive: true });
-    // Capture on window so Safari cannot strand the gesture when it retargets
-    // the touch from the card to its nested scrolling container.
-    window.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
-    window.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
-    window.addEventListener('touchcancel', onTouchCancel, { passive: true, capture: true });
-    return () => {
-      card.removeEventListener('touchstart', onTouchStart);
-      window.removeEventListener('touchmove', onTouchMove, true);
-      window.removeEventListener('touchend', onTouchEnd, true);
-      window.removeEventListener('touchcancel', onTouchCancel, true);
-    };
-  });
-
-  // Pointer events retain desktop mouse dragging without affecting iOS touch.
-  const handlePointerDown = (e) => {
-    if (!isSwipeableSection || isSheetOpen || e.pointerType !== 'mouse' || e.button !== 0) return;
-    if (e.target.closest('button, input, textarea, a, select')) return;
-
-    activeTouchRef.current = e.pointerId;
-    touchStartRef.current = { x: e.clientX, y: e.clientY };
-    dragOffsetRef.current = 0;
-    dragAxisRef.current = null;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setIsDragging(true);
-  };
-
-  const handlePointerMove = (e) => {
-    if (e.pointerType !== 'mouse' || activeTouchRef.current !== e.pointerId || isSheetOpen) return;
-    const diffX = e.clientX - touchStartRef.current.x;
-    const diffY = e.clientY - touchStartRef.current.y;
-
-    // Wait for a small amount of movement before locking the gesture axis.
-    // This avoids a slightly diagonal vertical scroll becoming a card swipe.
-    if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
-      dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
-    }
-
-    if (dragAxisRef.current === 'x') {
-      dragOffsetRef.current = diffX;
-      setDragOffset({ x: diffX, rot: diffX * 0.03 });
-    }
-  };
-
-  const finishPointerGesture = (e, cancelled = false) => {
-    if (e.pointerType !== 'mouse' || activeTouchRef.current !== e.pointerId) return;
-    completeSwipe(cancelled);
-  };
-
   return (
     <div 
-      ref={cardRef}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={finishPointerGesture}
-      onPointerCancel={(e) => finishPointerGesture(e, true)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       style={{
         transform: `translateX(${dragOffset.x}px) rotate(${dragOffset.rot}deg)`,
         transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
@@ -188,12 +105,19 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
         </h2>
 
         <ul className="space-y-2.5 mb-4">
-          {item.summary && item.summary.map((bullet, idx) => (
-            <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
-              <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
-            </li>
-          ))}
-        </ul>
+  {(() => {
+    // Convert summary to an array if it's a string, or split by newline/sentences if needed
+    const summaries = Array.isArray(item.summary) 
+      ? item.summary 
+      : item.summary ? [item.summary] : [];
+
+    return summaries.map((bullet, idx) => (
+      <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
+        <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
+      </li>
+    ));
+  })()}
+</ul>
 
         {isSwipeableSection && (
           <div className="text-[10px] text-slate-500 text-center italic mt-2">
@@ -268,11 +192,14 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
 
 // ─── MAIN FEED PAGE ───
 export default function FeedPage() {
-  const router = useRouter();
-  const [profileReady, setProfileReady] = useState(false);
   const [activeTab, setActiveTab] = useState('my-news');
 
-  const [allAvailableCommunities] = useState(() => getAvailableCommunities().map((community) => community.name));
+  const [allAvailableCommunities] = useState([
+    'Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture', 
+    'Oulu Startup Founders', 'University Students Oulu', 'Northern Finland Real Estate',
+    'Oulu Cycling & Outdoors', 'Local Musicians & Artists', 'Oulu Gaming & Esports',
+    'Ostrobothnia Weather Watchers', 'Oulu Volunteer Network', 'Finnish Tech News'
+  ]);
 
   const [subscribedCommunities, setSubscribedCommunities] = useState(['Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture']);
   const [selectedCommunity, setSelectedCommunity] = useState('Oulu Tech Hub');
@@ -283,8 +210,6 @@ export default function FeedPage() {
 
   const [loading, setLoading] = useState(false);
   const [articlesData, setArticlesData] = useState(mockSectionsData);
-  const [usingFixtureNews, setUsingFixtureNews] = useState(true);
-  const [backendCommunityFeeds, setBackendCommunityFeeds] = useState([]);
   const [userFeedback, setUserFeedback] = useState({});
 
   // Touch States
@@ -301,71 +226,29 @@ export default function FeedPage() {
   const [newPubTitle, setNewPubTitle] = useState('');
   const [newPubContent, setNewPubContent] = useState('');
   const [newPubCommunity, setSelectedPubCommunity] = useState('Oulu Tech Hub');
+  const [pageOffset, setPageOffset] = useState(0);
+const [hasMore, setHasMore] = useState(true);
+const [isLoadingMore, setIsLoadingMore] = useState(false);
+
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
 
-  useEffect(() => {
-    const session = getSession();
-    if (!session) {
-      router.replace('/auth/login');
-      return;
-    }
-    if (!getUserProfile(session.userId)?.onboardingCompleted) {
-      router.replace('/onboarding');
-      return;
-    }
-    const timer = window.setTimeout(() => setProfileReady(true), 0);
-    return () => window.clearTimeout(timer);
-  }, [router]);
+  // Inside your FeedPage component:
+useEffect(() => {
+  async function loadFeed() {
+    setLoading(true);
+    const liveStories = await getPriorityNewsFeed('current-user-id'); // Replace with actual logged-in user ID or state
+    setArticlesData(prev => ({
+      ...prev,
+      'my-news': liveStories
+    }));
+    setLoading(false);
+  }
+  loadFeed();
+}, [activeTab]);
 
-  useEffect(() => {
-    if (!profileReady) return;
-    let cancelled = false;
-
-    const loadApprovedNews = async () => {
-      try {
-        const response = await fetch('/api/articles', { cache: 'no-store' });
-        if (!response.ok) return;
-        const approvedArticles = await response.json();
-        if (!cancelled && Array.isArray(approvedArticles) && approvedArticles.length > 0) {
-          setArticlesData((current) => ({ ...current, 'my-news': approvedArticles }));
-          setUsingFixtureNews(false);
-        }
-      } catch {
-        // Local development can still use the existing fixtures before the
-        // database and agent workflow have produced their first article.
-      }
-    };
-
-    void loadApprovedNews();
-    return () => { cancelled = true; };
-  }, [profileReady]);
-
-  useEffect(() => {
-    if (!profileReady || activeTab !== 'communities') return;
-    let cancelled = false;
-    const loadCommunityNews = async () => {
-      try {
-        const response = await fetch(`/api/articles?community=${encodeURIComponent(selectedCommunity)}`, { cache: 'no-store' });
-        if (!response.ok) return;
-        const approvedArticles = await response.json();
-        if (!cancelled && Array.isArray(approvedArticles) && approvedArticles.length > 0) {
-          setArticlesData((current) => ({
-            ...current,
-            communities: {
-              ...current.communities,
-              [selectedCommunity]: { ...(current.communities?.[selectedCommunity] || {}), verified: approvedArticles }
-            }
-          }));
-          setBackendCommunityFeeds((names) => names.includes(selectedCommunity) ? names : [...names, selectedCommunity]);
-        }
-      } catch { /* Keep the visibly labeled development fixture. */ }
-    };
-    void loadCommunityNews();
-    return () => { cancelled = true; };
-  }, [activeTab, profileReady, selectedCommunity]);
-
+  
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       const activeBtn = communityButtonRefs.current[selectedCommunity];
@@ -379,7 +262,27 @@ export default function FeedPage() {
     }
   }, [selectedCommunity]);
 
-  const handleCardSwipeOut = (itemId) => {
+  const loadMoreArticles = async () => {
+  if (isLoadingMore || !hasMore) return;
+  setIsLoadingMore(true);
+
+  const nextOffset = pageOffset + 10;
+  const moreStories = await getPriorityNewsFeed('current-user-id', 10, nextOffset);
+
+  if (moreStories.length === 0) {
+    setHasMore(false);
+  } else {
+    setArticlesData(prev => ({
+      ...prev,
+      [activeTab]: [...(prev[activeTab] || []), ...moreStories]
+    }));
+    setPageOffset(nextOffset);
+  }
+  setIsLoadingMore(false);
+};
+
+  
+  const handleCardSwipeOut = (itemId, direction) => {
     setArticlesData((prevData) => {
       const currentList = prevData[activeTab] || [];
       return {
@@ -389,24 +292,15 @@ export default function FeedPage() {
     });
   };
 
-  const handleCreatePublication = async (e) => {
+  const handleCreatePublication = (e) => {
     e.preventDefault();
     if (!newPubTitle.trim() || !newPubContent.trim()) {
       alert("Please fill in both title and content.");
       return;
     }
 
-    let persistedId = null;
-    try {
-      const response = await fetch('/api/submissions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newPubTitle, summary: newPubContent, content: newPubContent, community: newPubCommunity, category: 'Citizen Scoop' })
-      });
-      if (response.ok) persistedId = (await response.json()).id;
-    } catch { /* Keep the existing local prototype flow available offline. */ }
-
     const newArticle = {
-      id: persistedId || `fixture-pub-${Date.now()}`,
+      id: `pub-${Date.now()}`,
       category: 'My Story',
       community: newPubCommunity,
       title: newPubTitle,
@@ -493,16 +387,8 @@ export default function FeedPage() {
 
   const handleTouchMove = (e) => {
     if (isAnySheetOpen || !isDragging || startY === 0) return;
-    const deltaX = e.touches[0].clientX - touchStartX;
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - startY;
-
-    // A card owns horizontal gestures. Do not let pull-to-refresh translate
-    // the whole feed while an iPhone user is swiping a story.
-    if (Math.abs(deltaX) > Math.abs(deltaY)) {
-      setPullDistance(0);
-      return;
-    }
 
     if (deltaY > 0 && containerRef.current && containerRef.current.scrollTop <= 1) {
       const damped = Math.min(Math.pow(deltaY, 0.82) * 1.8, 120);
@@ -572,10 +458,6 @@ export default function FeedPage() {
     c.toLowerCase().includes(communitySearchQuery.toLowerCase())
   );
 
-  if (!profileReady) {
-    return <main className="min-h-screen bg-slate-950 grid place-items-center text-amber-400">Loading your news profile…</main>;
-  }
-
   return (
     <main
       onTouchStart={handleTouchStart}
@@ -583,16 +465,6 @@ export default function FeedPage() {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row overflow-hidden select-none relative"
     >
-      {usingFixtureNews && activeTab === 'my-news' && (
-        <div className="absolute top-1 right-2 z-40 rounded-full bg-slate-800/90 px-2 py-1 text-[9px] text-slate-400">
-          Development fixture feed
-        </div>
-      )}
-      {!backendCommunityFeeds.includes(selectedCommunity) && activeTab === 'communities' && (
-        <div className="absolute top-1 right-2 z-40 rounded-full bg-slate-800/90 px-2 py-1 text-[9px] text-slate-400">
-          Development fixture community feed
-        </div>
-      )}
       {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-5 h-screen justify-between shrink-0">
         <div>
@@ -634,9 +506,6 @@ export default function FeedPage() {
 
       {/* MAIN CONTENT WORKSPACE */}
       <div className="flex-1 flex flex-col items-center h-screen overflow-hidden py-3 px-3 relative">
-        <Link href="/settings" className="fixed right-4 top-3 z-40 rounded-full border border-slate-700 bg-slate-900/90 px-3 py-2 text-xs font-bold text-amber-400 shadow-lg backdrop-blur" aria-label="Open news preferences">
-          ⚙ Preferences
-        </Link>
         
         {/* Communities Subnav */}
         {activeTab === 'communities' && (
@@ -697,6 +566,12 @@ export default function FeedPage() {
           ) : (
             <div 
               ref={containerRef}
+              onScroll={(e) => {
+    const target = e.currentTarget;
+    if (target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
+      loadMoreArticles();
+    }
+  }}
               style={{
                 transform: `translateY(${pullDistance}px)`,
                 transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
@@ -726,6 +601,11 @@ export default function FeedPage() {
               ))}
             </div>
           )}
+           {isLoadingMore && (
+    <div className="text-center py-4 text-amber-400 text-xs animate-pulse">
+      Loading more unseen news...
+    </div>
+  )}
         </div>
 
         {/* ─── FLOATING ACTION BUTTON (FAB) ─── */}
