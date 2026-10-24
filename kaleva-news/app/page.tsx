@@ -14,53 +14,58 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
   const [isDragging, setIsDragging] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const touchStartXRef = useRef(0);
-  const touchStartYRef = useRef(0);
-  const isHorizontalSwipeRef = useRef(false);
-  const isMouseDraggingRef = useRef(false);
+  const activePointerRef = useRef(null);
+  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const dragOffsetRef = useRef(0);
+  const dragAxisRef = useRef(null);
 
   const handleSheetStateChange = (isOpen) => {
     setIsSheetOpen(isOpen);
     if (onSheetToggle) onSheetToggle(isOpen);
   };
 
-  // ─── TOUCH HANDLERS (iOS & Android) ───
-  const handleTouchStart = (e) => {
+  // Pointer events + capture keep the gesture alive when an iPhone finger moves
+  // outside the card. `touchAction: pan-y` leaves vertical scrolling to Safari.
+  const handlePointerDown = (e) => {
     if (!isSwipeableSection || isSheetOpen) return;
-    touchStartXRef.current = e.targetTouches[0].clientX;
-    touchStartYRef.current = e.targetTouches[0].clientY;
-    isHorizontalSwipeRef.current = false;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('button, input, textarea, a, select')) return;
+
+    activePointerRef.current = e.pointerId;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    dragOffsetRef.current = 0;
+    dragAxisRef.current = null;
+    e.currentTarget.setPointerCapture(e.pointerId);
     setIsDragging(true);
   };
 
-  const handleTouchMove = (e) => {
-    if (!isSwipeableSection || !isDragging || isSheetOpen) return;
-    const currentX = e.targetTouches[0].clientX;
-    const currentY = e.targetTouches[0].clientY;
-    
-    const diffX = currentX - touchStartXRef.current;
-    const diffY = currentY - touchStartYRef.current;
+  const handlePointerMove = (e) => {
+    if (activePointerRef.current !== e.pointerId || isSheetOpen) return;
+    const diffX = e.clientX - pointerStartRef.current.x;
+    const diffY = e.clientY - pointerStartRef.current.y;
 
-    if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
-      isHorizontalSwipeRef.current = true;
+    // Wait for a small amount of movement before locking the gesture axis.
+    // This avoids a slightly diagonal vertical scroll becoming a card swipe.
+    if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
+      dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
     }
 
-    if (isHorizontalSwipeRef.current) {
-      if (e.cancelable) e.preventDefault();
-      const rotation = diffX * 0.03; 
-      setDragOffset({ x: diffX, rot: rotation });
+    if (dragAxisRef.current === 'x') {
+      dragOffsetRef.current = diffX;
+      setDragOffset({ x: diffX, rot: diffX * 0.03 });
     }
   };
 
-  const handleTouchEnd = () => {
-    if (!isSwipeableSection || isSheetOpen) return;
-    setIsDragging(false);
-    isHorizontalSwipeRef.current = false;
-    
-    const swipeThreshold = 180;
+  const finishPointerGesture = (e, cancelled = false) => {
+    if (activePointerRef.current !== e.pointerId) return;
 
-    if (Math.abs(dragOffset.x) > swipeThreshold) {
-      if (dragOffset.x > 0) {
+    const offsetX = dragOffsetRef.current;
+    activePointerRef.current = null;
+    dragAxisRef.current = null;
+    setIsDragging(false);
+
+    if (!cancelled && Math.abs(offsetX) > 180) {
+      if (offsetX > 0) {
         setDragOffset({ x: 600, rot: 30 });
         setTimeout(() => {
           handleFeedback(item, 'like');
@@ -74,58 +79,17 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
         }, 200);
       }
     } else {
+      dragOffsetRef.current = 0;
       setDragOffset({ x: 0, rot: 0 });
     }
   };
 
-  // ─── MOUSE HANDLERS (Mac Desktop) ───
-  const handleMouseDown = (e) => {
-    if (!isSwipeableSection || isSheetOpen) return;
-    if (e.target.closest('button, input, textarea, a, select')) return;
-    touchStartXRef.current = e.clientX;
-    touchStartYRef.current = e.clientY;
-    isHorizontalSwipeRef.current = false;
-    isMouseDraggingRef.current = true;
-    setIsDragging(true);
-  };
-
-  useEffect(() => {
-    if (!isDragging || !isMouseDraggingRef.current) return;
-
-    const handleMouseMove = (e) => {
-      if (!isSwipeableSection || isSheetOpen) return;
-      const diffX = e.clientX - touchStartXRef.current;
-      const diffY = e.clientY - touchStartYRef.current;
-
-      if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
-        isHorizontalSwipeRef.current = true;
-      }
-
-      if (isHorizontalSwipeRef.current) {
-        const rotation = diffX * 0.03;
-        setDragOffset({ x: diffX, rot: rotation });
-      }
-    };
-
-    const handleMouseUp = () => {
-      isMouseDraggingRef.current = false;
-      handleTouchEnd();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, isSwipeableSection, isSheetOpen, dragOffset.x]);
-
   return (
     <div 
-      onMouseDown={handleMouseDown}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointerGesture}
+      onPointerCancel={(e) => finishPointerGesture(e, true)}
       style={{
         transform: `translateX(${dragOffset.x}px) rotate(${dragOffset.rot}deg)`,
         transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
