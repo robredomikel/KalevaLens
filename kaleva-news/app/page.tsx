@@ -1,25 +1,45 @@
 'use client';
+
 import { useState, useRef, useEffect } from 'react';
 import { mockSectionsData } from '@/data/mockNews';
 import { trackArticleFeedback } from '@/lib/userService';
 import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
-import { getBlendedNewsFeed } from '@/app/actions/news';
-import { markStoryAsRead } from '@/app/actions/news';
+import { getBlendedNewsFeed, markStoryAsRead } from '@/app/actions/news';
 import { getPersonalizedFeed } from '@/app/actions/personalizedNews';
 import { getBlendedOutsidePriorityFeed } from '@/app/actions/blendedNews';
+import { 
+  getCommunitiesList, 
+  getCommunityFeed, 
+  submitToCommunity, 
+  verifyCommunityStory 
+} from '@/app/actions/communityNews';
+import { 
+  getUserSubscribedCommunities, 
+  toggleUserSubscription 
+} from '@/app/actions/subscriptions';
 
 const CURRENT_USER_ID = "123";
 
-
 // ─── EXTRACTED CARD COMPONENT ───
-function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handleCardSwipeOut, onSheetToggle }) {
+function NewsCard({ 
+  item, 
+  index, 
+  activeTab, 
+  communitySubTab, 
+  userFeedback, 
+  handleFeedback, 
+  handleCardSwipeOut, 
+  onSheetToggle,
+  onVerifySuccess 
+}) {
   const feedback = userFeedback[item.id];
   const isSwipeableSection = activeTab === 'my-news' || activeTab === 'outside';
 
   const [dragOffset, setDragOffset] = useState({ x: 0, rot: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const touchStartXRef = useRef(0);
   const touchStartYRef = useRef(0);
@@ -83,6 +103,19 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
     }
   };
 
+  const handleVerify = async () => {
+    setIsVerifying(true);
+    const res = await verifyCommunityStory(item.id);
+    setIsVerifying(false);
+
+    if (res.success) {
+      alert(`Story verified successfully! Moved to Verified feed.`);
+      if (onVerifySuccess) onVerifySuccess(item.id);
+    } else {
+      alert(`Error verifying story: ${res.error}`);
+    }
+  };
+
   return (
     <div 
       onTouchStart={handleTouchStart}
@@ -101,7 +134,7 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
       <div className="overflow-y-auto pr-1 scrollbar-none flex-1">
         <div className="flex justify-between items-center mb-2">
           <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2 py-0.5 rounded">
-            {item.community} • {item.category} {index === 0 && '🔥 (First)'}
+            {item.community || 'Kaleva'} • {item.category || 'News'} {index === 0 && '🔥 (First)'}
           </span>
           <span className="text-[11px] text-slate-400">{item.readTime || '1 min read'}</span>
         </div>
@@ -123,6 +156,16 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
             ));
           })()}
         </ul>
+
+        {activeTab === 'communities' && (communitySubTab === 'unverified' || item.stage === 'PENDING') && (
+          <button
+            onClick={handleVerify}
+            disabled={isVerifying}
+            className="mb-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-[11px] font-bold rounded-xl transition shadow-md w-full text-center"
+          >
+            {isVerifying ? 'Verifying...' : '✔ Verify Story (Moderator Action)'}
+          </button>
+        )}
 
         {isSwipeableSection && (
           <div className="text-[10px] text-slate-500 text-center italic mt-2">
@@ -199,15 +242,12 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
 export default function FeedPage() {
   const [activeTab, setActiveTab] = useState('my-news');
 
-  const [allAvailableCommunities] = useState([
-    'Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture', 
-    'Oulu Startup Founders', 'University Students Oulu', 'Northern Finland Real Estate',
-    'Oulu Cycling & Outdoors', 'Local Musicians & Artists', 'Oulu Gaming & Esports',
-    'Ostrobothnia Weather Watchers', 'Oulu Volunteer Network', 'Finnish Tech News'
+  const [allAvailableCommunities, setAllAvailableCommunities] = useState([
+    'Indian', 'Spanish', 'Food', 'PhD Researcher in Oulu', 'Tech Jobs'
   ]);
 
-  const [subscribedCommunities, setSubscribedCommunities] = useState(['Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture']);
-  const [selectedCommunity, setSelectedCommunity] = useState('Oulu Tech Hub');
+  const [subscribedCommunities, setSubscribedCommunities] = useState([]);
+  const [selectedCommunity, setSelectedCommunity] = useState('');
   const [communitySubTab, setCommunitySubTab] = useState('verified');
   
   const [isManagingCommunities, setIsManagingCommunities] = useState(false);
@@ -230,7 +270,7 @@ export default function FeedPage() {
   const [isCreatingPublication, setIsCreatingPublication] = useState(false);
   const [newPubTitle, setNewPubTitle] = useState('');
   const [newPubContent, setNewPubContent] = useState('');
-  const [newPubCommunity, setSelectedPubCommunity] = useState('Oulu Tech Hub');
+  const [newPubCommunity, setSelectedPubCommunity] = useState('Indian');
 
   // Pagination States for Infinite Scroll
   const [pageOffset, setPageOffset] = useState(0);
@@ -241,119 +281,118 @@ export default function FeedPage() {
   const [hasMoreOutside, setHasMoreOutside] = useState(true);
   const [isLoadingMoreOutside, setIsLoadingMoreOutside] = useState(false);
 
-
-// Load Outside / Blended Feed on Tab Switch
-useEffect(() => {
-  async function loadFeeds() {
-    if (activeTab === 'outside') {
-      setLoading(true);
-      const blendedStories = await getBlendedNewsFeed('current-user-id', 10, 0);
-      setArticlesData(prev => ({
-        ...prev,
-        outside: blendedStories
-      }));
-      setLoading(false);
-    }
-  }
-  loadFeeds();
-}, [activeTab]);
+  // Database Community States
+  const [communityArticles, setCommunityArticles] = useState([]);
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
 
-  // Load feeds dynamically when switching tabs or changing subscriptions
-useEffect(() => {
-  async function loadFeeds() {
-    setLoading(true);
-    if (activeTab === 'my-news') {
-      const stories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, 0);
-      setArticlesData(prev => ({
-        ...prev,
-        'my-news': stories
-      }));
-      setPageOffset(0);
-      setHasMore(true);
-    } else if (activeTab === 'outside') {
-      const blendedStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
-      setArticlesData(prev => ({
-        ...prev,
-        outside: blendedStories
-      }));
-      setOutsideOffset(0);
-      setHasMoreOutside(true);
-    }
-    setLoading(false);
-  }
-  loadFeeds();
-}, [activeTab, subscribedCommunities]);
-
-// Infinite scroll loader for 'My News' (Personalized Subscriptions)
-const loadMoreArticles = async () => {
-  if (isLoadingMore || !hasMore) return;
-  setIsLoadingMore(true);
-
-  const nextOffset = pageOffset + 10;
-  const moreStories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, nextOffset);
-
-  if (moreStories.length === 0) {
-    setHasMore(false);
-  } else {
-    setArticlesData(prev => ({
-      ...prev,
-      'my-news': [...(prev['my-news'] || []), ...moreStories]
-    }));
-    setPageOffset(nextOffset);
-  }
-  setIsLoadingMore(false);
-};
-
-// Infinite scroll loader for 'Outside Sources' (Blended Ratio Feed)
-const loadMoreOutsideArticles = async () => {
-  if (isLoadingMoreOutside || !hasMoreOutside) return;
-  setIsLoadingMoreOutside(true);
-
-  const nextOffset = outsideOffset + 10;
-  const moreStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
-
-  if (moreStories.length === 0) {
-    setHasMoreOutside(false);
-  } else {
-    setArticlesData(prev => ({
-      ...prev,
-      outside: [...(prev.outside || []), ...moreStories]
-    }));
-    setOutsideOffset(nextOffset);
-  }
-  setIsLoadingMoreOutside(false);
-};
-
-  
-  // Load My News Feed on Mount / Tab Switch
+  // Fetch all communities & user's database active subscriptions on mount
   useEffect(() => {
-    async function loadFeed() {
-      if (activeTab === 'my-news') {
+    async function initCommunities() {
+      const list = await getCommunitiesList();
+      if (list.length > 0) {
+        const names = list.map(c => c.name);
+        setAllAvailableCommunities(names);
+      }
+
+      // Fetch ONLY communities this user is actively subscribed to from db (isActive = TRUE)
+      const userSubs = await getUserSubscribedCommunities(CURRENT_USER_ID);
+      if (userSubs.length > 0) {
+        const subNames = userSubs.map(s => s.name);
+        setSubscribedCommunities(subNames);
+        setSelectedCommunity(subNames[0]);
+      } else {
+        setSubscribedCommunities([]);
+        setSelectedCommunity('');
+      }
+    }
+    initCommunities();
+  }, []);
+
+  // Fetch feed whenever activeTab, selectedCommunity, or communitySubTab changes
+  useEffect(() => {
+    async function loadCommunityFeedData() {
+      if (activeTab === 'communities' && selectedCommunity) {
         setLoading(true);
-        const liveStories = await getPersonalizedFeed('current-user-id', 10, 0);
-        setArticlesData(prev => ({
-          ...prev,
-          'my-news': liveStories
-        }));
-        setLoading(false);
-      } else if (activeTab === 'outside') {
-        setLoading(true);
-        const outsideStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
-        setArticlesData(prev => ({
-          ...prev,
-          outside: outsideStories
-        }));
+        const isVerified = communitySubTab === 'verified';
+        const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
+        setCommunityArticles(stories);
         setLoading(false);
       }
     }
-    loadFeed();
-  }, [activeTab]);
+    loadCommunityFeedData();
+  }, [activeTab, selectedCommunity, communitySubTab]);
+
+  // Load feeds dynamically when switching tabs or changing subscriptions
+  useEffect(() => {
+    async function loadFeeds() {
+      if (subscribedCommunities.length === 0) return;
+      setLoading(true);
+      if (activeTab === 'my-news') {
+        const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
+        setArticlesData(prev => ({
+          ...prev,
+          'my-news': stories
+        }));
+        setPageOffset(0);
+        setHasMore(true);
+      } else if (activeTab === 'outside') {
+        const blendedStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+        setArticlesData(prev => ({
+          ...prev,
+          outside: blendedStories
+        }));
+        setOutsideOffset(0);
+        setHasMoreOutside(true);
+      }
+      setLoading(false);
+    }
+    loadFeeds();
+  }, [activeTab, subscribedCommunities]);
+
+  // Infinite scroll loader for 'My News'
+  const loadMoreArticles = async () => {
+    if (isLoadingMore || !hasMore || subscribedCommunities.length === 0) return;
+    setIsLoadingMore(true);
+
+    const nextOffset = pageOffset + 10;
+    const moreStories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, nextOffset);
+
+    if (moreStories.length === 0) {
+      setHasMore(false);
+    } else {
+      setArticlesData(prev => ({
+        ...prev,
+        'my-news': [...(prev['my-news'] || []), ...moreStories]
+      }));
+      setPageOffset(nextOffset);
+    }
+    setIsLoadingMore(false);
+  };
+
+  // Infinite scroll loader for 'Outside Sources'
+  const loadMoreOutsideArticles = async () => {
+    if (isLoadingMoreOutside || !hasMoreOutside) return;
+    setIsLoadingMoreOutside(true);
+
+    const nextOffset = outsideOffset + 10;
+    const moreStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, nextOffset);
+
+    if (moreStories.length === 0) {
+      setHasMoreOutside(false);
+    } else {
+      setArticlesData(prev => ({
+        ...prev,
+        outside: [...(prev.outside || []), ...moreStories]
+      }));
+      setOutsideOffset(nextOffset);
+    }
+    setIsLoadingMoreOutside(false);
+  };
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (typeof window !== 'undefined' && window.innerWidth < 768 && selectedCommunity) {
       const activeBtn = communityButtonRefs.current[selectedCommunity];
       if (activeBtn) {
         activeBtn.scrollIntoView({
@@ -365,9 +404,7 @@ const loadMoreOutsideArticles = async () => {
     }
   }, [selectedCommunity]);
 
-  
   const handleCardSwipeOut = (itemId, direction) => {
-    // Mark story as read in backend history so it drops to seen fallback queue
     markStoryAsRead(CURRENT_USER_ID, itemId);
 
     setArticlesData((prevData) => {
@@ -379,85 +416,92 @@ const loadMoreOutsideArticles = async () => {
     });
   };
 
-  const handleCreatePublication = (e) => {
+  const handleCreatePublication = async (e) => {
     e.preventDefault();
     if (!newPubTitle.trim() || !newPubContent.trim()) {
       alert("Please fill in both title and content.");
       return;
     }
 
-    const newArticle = {
-      id: `pub-${Date.now()}`,
-      category: 'My Story',
-      community: newPubCommunity,
+    const response = await submitToCommunity({
       title: newPubTitle,
-      summary: [newPubContent],
-      readTime: '1 min read'
-    };
+      summary: newPubContent,
+      content: newPubContent,
+      community: newPubCommunity,
+      category: 'Community Submission'
+    });
 
-    setArticlesData((prev) => ({
-      ...prev,
-      published: [newArticle, ...(prev.published || [])]
-    }));
+    if (response.success) {
+      alert("Publication submitted successfully as unverified!");
+      setNewPubTitle('');
+      setNewPubContent('');
+      setIsCreatingPublication(false);
+      setSelectedCommunity(newPubCommunity);
+      setCommunitySubTab('unverified');
+      setActiveTab('communities');
+    } else {
+      alert(`Error creating publication: ${response.error}`);
+    }
+  };
 
-    setNewPubTitle('');
-    setNewPubContent('');
-    setIsCreatingPublication(false);
-    setActiveTab('published');
+  const handleVerifySuccess = (verifiedStoryId) => {
+    setCommunityArticles(prev => prev.filter(story => story.id !== verifiedStoryId));
   };
   
-  const toggleCommunitySubscription = (commName) => {
-    if (subscribedCommunities.includes(commName)) {
+  // Handle Database Subscription / Unsubscription toggle
+  const toggleCommunitySubscription = async (commName) => {
+    const isCurrentlySubscribed = subscribedCommunities.includes(commName);
+
+    if (isCurrentlySubscribed) {
       if (subscribedCommunities.length === 1) {
         alert("You must be subscribed to at least one community.");
         return;
       }
-      const updated = subscribedCommunities.filter(c => c !== commName);
-      setSubscribedCommunities(updated);
-      if (selectedCommunity === commName) {
-        setSelectedCommunity(updated[0]);
+      // Unsubscribe in database (sets isActive = false)
+      const res = await toggleUserSubscription(CURRENT_USER_ID, commName, false);
+      if (res.success) {
+        const updated = subscribedCommunities.filter(c => c !== commName);
+        setSubscribedCommunities(updated);
+        if (selectedCommunity === commName) {
+          setSelectedCommunity(updated[0]);
+        }
+      } else {
+        alert(`Error unsubscribing: ${res.error}`);
       }
     } else {
-      setSubscribedCommunities([...subscribedCommunities, commName]);
+      // Subscribe in database (sets isActive = true)
+      const res = await toggleUserSubscription(CURRENT_USER_ID, commName, true);
+      if (res.success) {
+        const updated = [...subscribedCommunities, commName];
+        setSubscribedCommunities(updated);
+        if (!selectedCommunity) {
+          setSelectedCommunity(commName);
+        }
+      } else {
+        alert(`Error subscribing: ${res.error}`);
+      }
     }
   };
 
-  const handleRefreshFeed = () => {
+  const handleRefreshFeed = async () => {
     setIsRefreshing(true);
     setLoading(true);
-    setTimeout(() => {
-      setArticlesData((prevData) => {
-        const currentList = activeTab === 'communities' 
-          ? [...(prevData.communities[selectedCommunity]?.[communitySubTab] || [])]
-          : [...(prevData[activeTab] || [])];
 
-        if (currentList.length > 0) {
-          const shiftedItem = currentList.shift();
-          currentList.push(shiftedItem);
-        }
+    if (activeTab === 'communities') {
+      const isVerified = communitySubTab === 'verified';
+      const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
+      setCommunityArticles(stories);
+    } else if (activeTab === 'my-news') {
+      const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
+      setArticlesData(prev => ({ ...prev, 'my-news': stories }));
+    } else if (activeTab === 'outside') {
+      const stories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+      setArticlesData(prev => ({ ...prev, outside: stories }));
+    }
 
-        if (activeTab === 'communities') {
-          return {
-            ...prevData,
-            communities: {
-              ...prevData.communities,
-              [selectedCommunity]: {
-                ...(prevData.communities[selectedCommunity] || { verified: [], unverified: [] }),
-                [communitySubTab]: currentList
-              }
-            }
-          };
-        } else {
-          return {
-            ...prevData,
-            [activeTab]: currentList
-          };
-        }
-      });
-      setLoading(false);
-      setIsRefreshing(false);
-      setPullDistance(0);
-    }, 450);
+    setLoading(false);
+    setIsRefreshing(false);
+    setPullDistance(0);
   };
 
   const handleTouchStart = (e) => {
@@ -534,8 +578,7 @@ const loadMoreOutsideArticles = async () => {
 
   const getActiveItems = () => {
     if (activeTab === 'communities') {
-      const communityFeed = articlesData.communities?.[selectedCommunity];
-      return communityFeed ? communityFeed[communitySubTab] : [];
+      return communityArticles;
     }
     return articlesData[activeTab] || [];
   };
@@ -684,10 +727,12 @@ const loadMoreOutsideArticles = async () => {
                   item={item}
                   index={index}
                   activeTab={activeTab}
+                  communitySubTab={communitySubTab}
                   userFeedback={userFeedback}
                   handleFeedback={handleFeedback}
                   handleCardSwipeOut={handleCardSwipeOut}
                   onSheetToggle={setIsAnySheetOpen}
+                  onVerifySuccess={handleVerifySuccess}
                 />
               ))}
 
@@ -773,7 +818,7 @@ const loadMoreOutsideArticles = async () => {
               <div className="mb-3">
                 <input 
                   type="text" 
-                  placeholder="Search hundreds of communities..."
+                  placeholder="Search communities..."
                   value={communitySearchQuery}
                   onChange={(e) => setCommunitySearchQuery(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
