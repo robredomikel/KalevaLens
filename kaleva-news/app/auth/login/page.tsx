@@ -14,7 +14,7 @@ export default function LoginPage() {
       return;
     }
     // Mock customer login action
-    alert(`Welcome back, ${email}! Logging into Kaleva Micro-News...`);
+    alert(`Welcome back, ${email}! Logging into Kaleva Lens...`);
     window.location.href = '/';
   };
 
@@ -25,7 +25,7 @@ export default function LoginPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="text-xl font-black tracking-wider text-amber-400 mb-1">
-            KALEVA <span className="text-white text-xs font-normal">MICRO-NEWS</span>
+            KALEVA <span className="text-white text-xs font-normal">LENS</span>
           </h1>
           <p className="text-xs text-slate-400">Sign in to sync your community subscriptions & stories</p>
         </div>

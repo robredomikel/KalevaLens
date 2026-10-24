@@ -1,4 +1,5 @@
 // @ts-nocheck -- legacy JSX page is incrementally typed.
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -138,12 +139,53 @@ function NewsCard({
           <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2 py-0.5 rounded">
             {item.community || 'Kaleva'} • {item.category || 'News'} {index === 0 && '🔥 (First)'}
           </span>
-          <span className="text-[11px] text-slate-400">{item.readTime || '1 min read'}</span>
+          <div className="flex items-center space-x-2">
+            {item.contentAccessLevel === 'SUMMARY_ONLY' ? (
+              <span className="text-[9px] font-semibold text-slate-400 bg-slate-800/80 border border-slate-700 px-1.5 py-0.5 rounded">
+                Summary Only
+              </span>
+            ) : (
+              <span className="text-[9px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.5 rounded">
+                Full Article
+              </span>
+            )}
+            <span className="text-[11px] text-slate-400">{item.readTime || '1 min read'}</span>
+          </div>
         </div>
 
-        <h2 className="text-lg sm:text-xl font-bold mt-1 mb-3 leading-snug text-white">
+        {item.imageUrl && (
+          <div className="mb-3 rounded-2xl overflow-hidden max-h-48 w-full bg-slate-950 border border-slate-800">
+            <img 
+              src={item.imageUrl} 
+              alt={item.title || 'Article image'} 
+              className="w-full h-full object-cover" 
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (target.parentElement) {
+                  target.parentElement.style.display = 'none';
+                }
+              }}
+            />
+          </div>
+        )}
+
+        <h2 className="text-lg sm:text-xl font-bold mt-1 mb-2 leading-snug text-white">
           {item.title}
         </h2>
+
+        <div className="flex items-center space-x-2 text-[11px] text-slate-400 mb-3">
+          <span>Source: <strong className="text-slate-200">{item.authorId || item.publisher || 'Kaleva'}</strong></span>
+          {item.sourceUrl && (
+            <a
+              href={item.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber-400 hover:underline font-semibold flex items-center space-x-1 ml-auto"
+            >
+              <span>🔗 Original Article</span>
+            </a>
+          )}
+        </div>
 
         {item.preferredContentReady === false && (
           <p className="text-[10px] text-amber-300 mb-2 animate-pulse">Preparing your preferred language and length…</p>
@@ -281,6 +323,7 @@ export default function FeedPage() {
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
+  const subscribedCommunitiesKey = Array.isArray(subscribedCommunities) ? subscribedCommunities.join(',') : '';
 
   // Fetch all communities & user's database active subscriptions on mount
   useEffect(() => {
@@ -343,7 +386,8 @@ export default function FeedPage() {
       setLoading(false);
     }
     loadFeeds();
-  }, [activeTab, subscribedCommunities, preferenceRevision]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, subscribedCommunitiesKey, preferenceRevision]);
 
   // Infinite scroll loader for 'My News'
   const loadMoreArticles = async () => {
@@ -607,7 +651,7 @@ export default function FeedPage() {
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-5 h-screen justify-between shrink-0">
         <div>
           <h1 className="text-lg font-black tracking-wider text-amber-400 mb-6">
-            KALEVA <span className="text-white text-xs font-normal">MICRO</span>
+            KALEVA <span className="text-white text-xs font-normal">LENS</span>
           </h1>
           <nav className="space-y-2">
             <button 
@@ -641,7 +685,7 @@ export default function FeedPage() {
         </div>
 
         <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-[10px] text-slate-400">
-          Kaleva AI Micro-News <br />Hackathon Edition
+          Kaleva Lens <br />Hackathon Edition
         </div>
       </aside>
 
@@ -709,7 +753,7 @@ export default function FeedPage() {
               ref={containerRef}
               onScroll={(e) => {
                 const target = e.currentTarget;
-                if (target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
+                if (target.scrollTop > 50 && target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
                   if (activeTab === 'my-news') {
                     loadMoreArticles();
                   } else if (activeTab === 'outside') {
@@ -821,7 +865,7 @@ export default function FeedPage() {
               <div className="flex justify-between items-center mb-3">
                 <div>
                   <h3 className="text-base font-bold text-white">Manage Communities</h3>
-                  <p className="text-[11px] text-slate-400">Subscribe to topics to curate your micro-feed</p>
+                  <p className="text-[11px] text-slate-400">Subscribe to topics to curate your personalized feed</p>
                 </div>
                 <button 
                   onClick={() => setIsManagingCommunities(false)}
@@ -880,7 +924,7 @@ export default function FeedPage() {
               <div className="flex justify-between items-center mb-3">
                 <div>
                   <h3 className="text-base font-bold text-white">New Publication</h3>
-                  <p className="text-[11px] text-slate-400">Publish a micro-news update or story</p>
+                  <p className="text-[11px] text-slate-400">Publish a news update or story</p>
                 </div>
                 <button 
                   onClick={() => setIsCreatingPublication(false)}

@@ -24,7 +24,7 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
       const feed = await sql`
         WITH CombinedOutsideFeed AS (
           (
-            SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "canonicalId", "articleVersion", "sourceUrl", 1 as read_priority
+            SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules", 1 as read_priority
             FROM "StorySubmission"
             WHERE stage = 'PUBLISHED' AND ("sourceType" = 'KALEVA_RSS' OR "sourceType" IS NULL)
             ORDER BY "createdAt" DESC
@@ -32,9 +32,9 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
           )
           UNION ALL
           (
-            SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "canonicalId", "articleVersion", "sourceUrl", 1 as read_priority
+            SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules", 1 as read_priority
             FROM "StorySubmission"
-            WHERE stage = 'PUBLISHED' AND "sourceType" = 'OUTSIDE'
+            WHERE stage = 'PUBLISHED' AND ("sourceType" != 'KALEVA_RSS' AND "sourceType" IS NOT NULL)
             ORDER BY "createdAt" DESC
             LIMIT ${outsideLimit} OFFSET ${outsideOffset}
           )
@@ -49,7 +49,7 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
       WITH CombinedOutsideFeed AS (
         -- Part 1: Local Kaleva proportion in Outside tab
         (
-          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."canonicalId", s."articleVersion", s."sourceUrl",
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
             CASE 
               WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${userId}) THEN 2 
               ELSE 1 
@@ -60,20 +60,20 @@ export async function getBlendedOutsidePriorityFeed(userId, limit = 10, offset =
           LIMIT ${localLimit} OFFSET ${localOffset}
         )
         UNION ALL
-        -- Part 2: Outside Sources proportion
+        -- Part 2: Outside Sources proportion (Finnish & International RSS)
         (
-          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."canonicalId", s."articleVersion", s."sourceUrl",
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
             CASE 
               WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${userId}) THEN 2 
               ELSE 1 
             END as read_priority
           FROM "StorySubmission" s
-          WHERE s.stage = 'PUBLISHED' AND s."sourceType" = 'OUTSIDE'
+          WHERE s.stage = 'PUBLISHED' AND (s."sourceType" != 'KALEVA_RSS' AND s."sourceType" IS NOT NULL)
           ORDER BY read_priority ASC, s."createdAt" DESC
           LIMIT ${outsideLimit} OFFSET ${outsideOffset}
         )
       )
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "canonicalId", "articleVersion", "sourceUrl"
+      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
       FROM CombinedOutsideFeed
       ORDER BY read_priority ASC, "createdAt" DESC;
     `;

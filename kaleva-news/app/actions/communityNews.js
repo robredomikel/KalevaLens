@@ -43,7 +43,7 @@ export async function getCommunityFeed(communityName, isVerified = true, limit =
   try {
     const feed = await sql`
       WITH RankedStories AS (
-        SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt",
+        SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
           CASE 
             WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${CURRENT_USER_ID}) THEN 2 
             ELSE 1 
@@ -51,7 +51,7 @@ export async function getCommunityFeed(communityName, isVerified = true, limit =
         FROM "StorySubmission" s
         WHERE s.community = ${communityName} AND s.stage = ${targetStage}
       )
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt"
+      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
       FROM RankedStories
       ORDER BY read_priority ASC, "createdAt" DESC
       LIMIT ${parsedLimit} OFFSET ${parsedOffset};

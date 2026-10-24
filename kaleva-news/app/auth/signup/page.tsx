@@ -43,7 +43,7 @@ export default function SignupPage() {
         {/* Header */}
         <div className="text-center mb-6">
           <h1 className="text-xl font-black tracking-wider text-amber-400 mb-1">
-            JOIN KALEVA <span className="text-white text-xs font-normal">MICRO</span>
+            JOIN KALEVA <span className="text-white text-xs font-normal">LENS</span>
           </h1>
           <p className="text-xs text-slate-400">Create your citizen journalist & reader account</p>
         </div>

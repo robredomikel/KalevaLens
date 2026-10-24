@@ -51,7 +51,24 @@ export async function ensureDatabaseSchema() {
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "sourceGuid" TEXT;`;
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "canonicalId" TEXT;`;
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "articleVersion" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "sourceId" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "contentAccessLevel" TEXT DEFAULT 'SUMMARY_ONLY';`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "licensingRules" JSONB;`;
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS "StorySubmission_canonicalId_key" ON "StorySubmission" ("canonicalId") WHERE "canonicalId" IS NOT NULL;`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "RSSFeedLog" (
+        "id" TEXT PRIMARY KEY,
+        "sourceId" TEXT UNIQUE NOT NULL,
+        "publisher" TEXT NOT NULL,
+        "accessible" BOOLEAN NOT NULL,
+        "itemCount" INT NOT NULL DEFAULT 0,
+        "availableMetadataFields" JSONB,
+        "lastChecked" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "error" TEXT
+      );
+    `;
 
     // 3. Ensure AgentExecutionLog table
     await sql`

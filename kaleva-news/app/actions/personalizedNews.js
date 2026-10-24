@@ -35,7 +35,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
     if (!userId) {
       if (subscribedCommunities && subscribedCommunities.length > 0) {
         feed = await sql`
-          SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl"
+          SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
           FROM "StorySubmission" 
           WHERE stage = 'PUBLISHED' AND (community = ANY(${subscribedCommunities}) OR community = 'Oulu' OR community = 'Kaleva' OR community IS NULL)
           ORDER BY "createdAt" DESC
@@ -43,7 +43,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
         `;
       } else {
         feed = await sql`
-          SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl"
+          SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
           FROM "StorySubmission" 
           WHERE stage = 'PUBLISHED' 
           ORDER BY "createdAt" DESC
@@ -56,7 +56,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
     if (subscribedCommunities && subscribedCommunities.length > 0) {
       feed = await sql`
         WITH RankedStories AS (
-          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."canonicalId", s."articleVersion", s."sourceUrl",
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
             CASE 
               WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${userId}) THEN 2 
               ELSE 1 
@@ -64,7 +64,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
           FROM "StorySubmission" s
           WHERE s.stage = 'PUBLISHED' AND (s.community = ANY(${subscribedCommunities}) OR s.community = 'Oulu' OR s.community = 'Kaleva' OR s.community IS NULL)
         )
-        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl"
+        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
         FROM RankedStories
         ORDER BY read_priority ASC, "createdAt" DESC
         LIMIT ${parsedLimit} OFFSET ${parsedOffset};
@@ -72,7 +72,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
     } else {
       feed = await sql`
         WITH RankedStories AS (
-          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."canonicalId", s."articleVersion", s."sourceUrl",
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
             CASE 
               WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${userId}) THEN 2 
               ELSE 1 
@@ -80,7 +80,7 @@ export async function getPersonalizedFeed(userId, communitiesOrLimit = 10, limit
           FROM "StorySubmission" s
           WHERE s.stage = 'PUBLISHED'
         )
-        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl"
+        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
         FROM RankedStories
         ORDER BY read_priority ASC, "createdAt" DESC
         LIMIT ${parsedLimit} OFFSET ${parsedOffset};

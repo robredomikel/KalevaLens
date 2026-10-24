@@ -5,7 +5,7 @@ import { SourceVerificationReport } from "../schemas/verification";
 
 const SYSTEM_INSTRUCTION = `
 You are a professional journalist for Kaleva Lens.
-Write a clear, factual, InShorts-style micro-news article draft based strictly on the provided candidate content and verified evidence.
+Write a clear, factual, InShorts-style news article draft based strictly on the provided candidate content and verified evidence.
 DO NOT invent facts, quotes, or sources.
 The output MUST include:
 - A punchy headline (title)
@@ -24,7 +24,7 @@ export async function runNewsGenerationAgent(
   revisionNotes?: string
 ): Promise<CanonicalArticleDraft> {
   const prompt = `
-Generate a canonical micro-news article draft:
+Generate a canonical article draft:
 Original Title: ${candidate.title}
 Editorial Angle: ${proposal.angle}
 Target Community: ${proposal.targetCommunity}

@@ -1,84 +1,20 @@
 'use server';
 
-import { neon } from '@neondatabase/serverless';
-import RSSParser from 'rss-parser';
 import { randomUUID } from 'crypto';
+import { neon } from '@neondatabase/serverless';
 import { ensureDatabaseSchema } from '@/lib/db/init';
 import { runIngestionAgent } from '@/lib/ai/agents/ingestion';
 import { runPersonalizationAgent } from '@/lib/ai/agents/personalization';
 import { editorialWorkflowApp } from '@/lib/ai/workflows/editorial';
-import { enqueueArticleMedia } from '@/lib/media/repository';
-import { canonicalArticleId, articleVersion } from '@/lib/media/identity';
-import { getMediaConfig } from '@/lib/ai/models';
+import { enqueueArticleMedia, attachMedia } from '@/lib/media/repository';
 import { applyUserPreferences } from '@/lib/preferences/feed';
+import { ingestAllRSSFeeds } from '@/lib/news/ingestion';
 
 const sql = neon(process.env.DATABASE_URL);
-const parser = new RSSParser();
-
-const KALEVA_RSS_URL = 'https://www.kaleva.fi/feedit/rss/managed-listing/rss-maksuttomat/';
-const OUTSIDE_RSS_URLS = (process.env.OUTSIDE_RSS_URLS || '').split(',').map((url) => url.trim()).filter(Boolean);
 
 // RSS Ingestion Helpers
-export async function fetchAndAutoPublishAllRSS() {
-  await ensureDatabaseSchema();
-  let queuedMediaCount = 0;
-  const demoLimit = process.env.MEDIA_DEMO_MODE === 'true' ? getMediaConfig().demoArticleLimit : Number.POSITIVE_INFINITY;
-
-  try {
-    // 1. Sync Kaleva
-    const kalevaFeed = await parser.parseURL(KALEVA_RSS_URL);
-    for (const item of kalevaFeed.items) {
-      const canonicalId = canonicalArticleId({ guid: item.guid, url: item.link, source: 'Kaleva', title: item.title });
-      const authorizedContent = item.content || item.contentSnippet || item.summary || '';
-      const version = articleVersion({ title: item.title, summary: item.contentSnippet || item.summary, content: authorizedContent });
-      const existing = await sql`SELECT id, content, "articleVersion" FROM "StorySubmission" WHERE "canonicalId" = ${canonicalId} LIMIT 1;`;
-      if (existing.length === 0) {
-        const id = randomUUID();
-        await sql`
-          INSERT INTO "StorySubmission" (id, title, summary, content, community, category, "authorId", stage, priority, "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion")
-          VALUES (${id}, ${item.title || 'Untitled'}, ${item.contentSnippet || item.summary || item.title || ''}, ${authorizedContent}, 'Oulu', 'Kaleva RSS', 'Kaleva', 'PUBLISHED', 0, 'KALEVA_RSS', ${item.link || null}, ${item.guid || null}, ${canonicalId}, ${version});
-        `;
-        if (queuedMediaCount < demoLimit) {
-          await enqueueArticleMedia(id, 'en', 10);
-          queuedMediaCount += 1;
-        }
-      } else if (authorizedContent && (existing[0].content !== authorizedContent || existing[0].articleVersion !== version)) {
-        await sql`UPDATE "StorySubmission" SET content=${authorizedContent}, "articleVersion"=${version}, "updatedAt"=CURRENT_TIMESTAMP WHERE id=${existing[0].id};`;
-      }
-    }
-
-  } catch (error) {
-    console.error(`Error syncing Kaleva RSS feed (${KALEVA_RSS_URL}):`, error);
-  }
-
-  // 2. Sync optional outside sources independently. One dead feed must not
-  // prevent database-backed news or the remaining sources from loading.
-  for (const url of OUTSIDE_RSS_URLS) {
-    try {
-      const outsideFeed = await parser.parseURL(url);
-      for (const item of outsideFeed.items) {
-        const canonicalId = canonicalArticleId({ guid: item.guid, url: item.link, source: url, title: item.title });
-        const authorizedContent = item.content || item.contentSnippet || item.summary || '';
-        const version = articleVersion({ title: item.title, summary: item.contentSnippet || item.summary, content: authorizedContent });
-        const existing = await sql`SELECT id, content, "articleVersion" FROM "StorySubmission" WHERE "canonicalId" = ${canonicalId} LIMIT 1;`;
-        if (existing.length === 0) {
-          const id = randomUUID();
-          await sql`
-            INSERT INTO "StorySubmission" (id, title, summary, content, community, category, "authorId", stage, priority, "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion")
-            VALUES (${id}, ${item.title || 'Untitled'}, ${item.contentSnippet || item.summary || item.title || ''}, ${authorizedContent}, 'Northern Finland', 'Outside Source', 'YLE', 'PUBLISHED', 0, 'OUTSIDE', ${item.link || null}, ${item.guid || null}, ${canonicalId}, ${version});
-          `;
-          if (queuedMediaCount < demoLimit) {
-            await enqueueArticleMedia(id, 'en', 5);
-            queuedMediaCount += 1;
-          }
-        } else if (authorizedContent && (existing[0].content !== authorizedContent || existing[0].articleVersion !== version)) {
-          await sql`UPDATE "StorySubmission" SET content=${authorizedContent}, "articleVersion"=${version}, "updatedAt"=CURRENT_TIMESTAMP WHERE id=${existing[0].id};`;
-        }
-      }
-    } catch (error) {
-      console.error(`Skipping unavailable outside RSS feed (${url}):`, error);
-    }
-  }
+export async function fetchAndAutoPublishAllRSS(force = false) {
+  return await ingestAllRSSFeeds(force);
 }
 
 /**
@@ -121,7 +57,7 @@ export async function getBlendedNewsFeed(userId, limit = 10, offset = 0) {
         UNION ALL
         (SELECT * FROM RankedCombined WHERE "sourceType" = 'OUTSIDE' ORDER BY read_priority ASC, "createdAt" DESC LIMIT ${outsideLimit} OFFSET ${outsideOffset})
       )
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "canonicalId", "articleVersion", "sourceUrl"
+      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "canonicalId", "articleVersion", "sourceUrl", "imageUrl", "contentAccessLevel", "licensingRules"
       FROM RatioBlend
       ORDER BY read_priority ASC, "createdAt" DESC;
     `;
@@ -183,7 +119,7 @@ export async function getPendingEditorialTasks() {
 
   try {
     const submissions = await sql`
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "aiScore", "verificationReport", "createdAt"
+      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "aiScore", "verificationReport", "createdAt", "imageUrl", "sourceUrl"
       FROM "StorySubmission"
       ORDER BY "createdAt" DESC;
     `;
@@ -300,7 +236,7 @@ export async function getArticleById(articleId) {
   try {
     // 1. Query database for StorySubmission
     const dbStories = await sql`
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "aiScore", "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl"
+      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "aiScore", "createdAt", "updatedAt", "canonicalId", "articleVersion", "sourceUrl", "imageUrl", "contentAccessLevel", "licensingRules"
       FROM "StorySubmission"
       WHERE id = ${articleId} LIMIT 1;
     `;
@@ -325,6 +261,8 @@ export async function getArticleById(articleId) {
           category: story.category || 'Verified News',
           author: story.authorId || 'Kaleva Editorial',
           createdAt: story.createdAt,
+          imageUrl: story.imageUrl || null,
+          sourceUrl: story.sourceUrl || null,
           translations: translations || [],
           contextualExplanation: contextRows[0]?.explanation || null,
           media: (await attachMedia([story]))[0]?.media || {},
