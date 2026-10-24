@@ -8,6 +8,7 @@ export interface GenerateOptions<T> {
   prompt: string;
   systemInstruction?: string;
   schema?: z.ZodType<T>;
+  responseJsonSchema?: Record<string, unknown>;
   fallbackResponse?: T;
 }
 
@@ -57,6 +58,7 @@ export async function generateAgentStructured<T>(
         config: {
           systemInstruction: options.systemInstruction,
           responseMimeType: options.schema ? "application/json" : "text/plain",
+          responseJsonSchema: options.responseJsonSchema,
         },
       });
 

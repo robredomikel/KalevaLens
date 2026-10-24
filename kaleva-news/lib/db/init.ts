@@ -46,6 +46,12 @@ export async function ensureDatabaseSchema() {
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "verificationReport" JSONB;`;
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "evidenceReferences" JSONB;`;
     await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "workflowId" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "sourceType" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "sourceGuid" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "canonicalId" TEXT;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "articleVersion" TEXT;`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "StorySubmission_canonicalId_key" ON "StorySubmission" ("canonicalId") WHERE "canonicalId" IS NOT NULL;`;
 
     // 3. Ensure AgentExecutionLog table
     await sql`
@@ -114,6 +120,70 @@ export async function ensureDatabaseSchema() {
         PRIMARY KEY ("userId", "storyId")
       );
     `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "NarrationScript" (
+        "id" TEXT PRIMARY KEY,
+        "articleId" TEXT NOT NULL,
+        "articleVersion" TEXT NOT NULL,
+        "language" TEXT NOT NULL,
+        "scriptVersion" TEXT NOT NULL,
+        "script" JSONB NOT NULL,
+        "model" TEXT NOT NULL,
+        "approvedAt" TIMESTAMP WITH TIME ZONE,
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("articleId", "articleVersion", "language", "scriptVersion")
+      );
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "ArticleMedia" (
+        "id" TEXT PRIMARY KEY,
+        "articleId" TEXT NOT NULL,
+        "articleVersion" TEXT NOT NULL,
+        "language" TEXT NOT NULL,
+        "mediaType" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "storageKey" TEXT,
+        "mediaUrl" TEXT,
+        "captionsUrl" TEXT,
+        "mimeType" TEXT,
+        "durationSeconds" DOUBLE PRECISION,
+        "fileSize" BIGINT,
+        "voice" TEXT,
+        "resolution" TEXT,
+        "generationModel" TEXT,
+        "generationMethod" TEXT,
+        "scriptVersion" TEXT NOT NULL,
+        "errorMessage" TEXT,
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("articleId", "articleVersion", "language", "mediaType", "scriptVersion")
+      );
+    `;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS "MediaJob" (
+        "id" TEXT PRIMARY KEY,
+        "articleId" TEXT NOT NULL,
+        "articleVersion" TEXT NOT NULL,
+        "language" TEXT NOT NULL,
+        "mediaType" TEXT NOT NULL,
+        "scriptVersion" TEXT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'pending',
+        "priority" INT NOT NULL DEFAULT 0,
+        "attempts" INT NOT NULL DEFAULT 0,
+        "maxAttempts" INT NOT NULL DEFAULT 3,
+        "runAfter" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "lockedAt" TIMESTAMP WITH TIME ZONE,
+        "lockedBy" TEXT,
+        "lastError" TEXT,
+        "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE("articleId", "articleVersion", "language", "mediaType", "scriptVersion")
+      );
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS "MediaJob_claim_idx" ON "MediaJob" (status, "runAfter", priority DESC);`;
 
     isInitialized = true;
   } catch (err) {

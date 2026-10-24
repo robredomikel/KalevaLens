@@ -11,6 +11,7 @@ import { runTranslationAgent } from "../agents/translation";
 import { runContextualizationAgent } from "../agents/contextualization";
 import { sql } from "@/lib/neon";
 import { ensureDatabaseSchema } from "@/lib/db/init";
+import { enqueueArticleMedia } from "@/lib/media/repository";
 
 // Persistent memory checkpointer for state persistence
 export const checkpointer = new MemorySaver();
@@ -283,6 +284,11 @@ async function publicationNode(state: EditorialWorkflowState) {
     } catch (err) {
       console.error(`[WORKFLOW] Translation error for ${lang}:`, err);
     }
+  }
+
+  // Persist durable work only after final human approval and translations.
+  for (const lang of targetLangs) {
+    await enqueueArticleMedia(storyId, lang, 20);
   }
 
   // 3. Generate Contextual Explanation

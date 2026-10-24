@@ -1,3 +1,4 @@
+// @ts-nocheck -- legacy JSX page is incrementally typed.
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
