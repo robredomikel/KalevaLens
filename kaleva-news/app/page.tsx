@@ -14,58 +14,48 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
   const [isDragging, setIsDragging] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
   const isHorizontalSwipeRef = useRef(false);
-  const pointerIdRef = useRef(null);
+  const isMouseDraggingRef = useRef(false);
 
   const handleSheetStateChange = (isOpen) => {
     setIsSheetOpen(isOpen);
     if (onSheetToggle) onSheetToggle(isOpen);
   };
 
-  const handleStart = (clientX, clientY, target = null, pointerId = null) => {
+  // ─── TOUCH HANDLERS (iOS & Android) ───
+  const handleTouchStart = (e) => {
     if (!isSwipeableSection || isSheetOpen) return;
-    startXRef.current = clientX;
-    startYRef.current = clientY;
+    touchStartXRef.current = e.targetTouches[0].clientX;
+    touchStartYRef.current = e.targetTouches[0].clientY;
     isHorizontalSwipeRef.current = false;
     setIsDragging(true);
-
-    if (pointerId !== null && target && target.setPointerCapture) {
-      try {
-        target.setPointerCapture(pointerId);
-        pointerIdRef.current = pointerId;
-      } catch (err) {}
-    }
   };
 
-  const handleMove = (clientX, clientY, cancelable = false, preventDefaultFn = null) => {
+  const handleTouchMove = (e) => {
     if (!isSwipeableSection || !isDragging || isSheetOpen) return;
-    const diffX = clientX - startXRef.current;
-    const diffY = clientY - startYRef.current;
+    const currentX = e.targetTouches[0].clientX;
+    const currentY = e.targetTouches[0].clientY;
+    
+    const diffX = currentX - touchStartXRef.current;
+    const diffY = currentY - touchStartYRef.current;
 
     if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
       isHorizontalSwipeRef.current = true;
     }
 
     if (isHorizontalSwipeRef.current) {
-      if (cancelable && preventDefaultFn) preventDefaultFn();
+      if (e.cancelable) e.preventDefault();
       const rotation = diffX * 0.03; 
       setDragOffset({ x: diffX, rot: rotation });
     }
   };
 
-  const handleEnd = (target = null) => {
+  const handleTouchEnd = () => {
     if (!isSwipeableSection || isSheetOpen) return;
     setIsDragging(false);
     isHorizontalSwipeRef.current = false;
-
-    if (pointerIdRef.current !== null && target && target.releasePointerCapture) {
-      try {
-        target.releasePointerCapture(pointerIdRef.current);
-      } catch (err) {}
-      pointerIdRef.current = null;
-    }
     
     const swipeThreshold = 180;
 
@@ -88,57 +78,51 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
     }
   };
 
-  // Pointer events (Mac mouse/trackpad, iOS Safari, Android)
-  const handlePointerDown = (e) => {
+  // ─── MOUSE HANDLERS (Mac Desktop) ───
+  const handleMouseDown = (e) => {
     if (!isSwipeableSection || isSheetOpen) return;
-    if (e.target.closest('button, input, textarea, a, select, [data-no-swipe]')) return;
-    handleStart(e.clientX, e.clientY, e.currentTarget, e.pointerId);
+    if (e.target.closest('button, input, textarea, a, select')) return;
+    touchStartXRef.current = e.clientX;
+    touchStartYRef.current = e.clientY;
+    isHorizontalSwipeRef.current = false;
+    isMouseDraggingRef.current = true;
+    setIsDragging(true);
   };
 
-  const handlePointerMove = (e) => {
-    if (!isDragging) return;
-    handleMove(e.clientX, e.clientY, e.cancelable, () => e.preventDefault());
-  };
+  useEffect(() => {
+    if (!isDragging || !isMouseDraggingRef.current) return;
 
-  const handlePointerUp = (e) => {
-    if (!isDragging) return;
-    handleEnd(e.currentTarget);
-  };
+    const handleMouseMove = (e) => {
+      if (!isSwipeableSection || isSheetOpen) return;
+      const diffX = e.clientX - touchStartXRef.current;
+      const diffY = e.clientY - touchStartYRef.current;
 
-  const handlePointerCancel = (e) => {
-    if (!isDragging) return;
-    handleEnd(e.currentTarget);
-  };
+      if (!isHorizontalSwipeRef.current && Math.abs(diffX) > Math.abs(diffY)) {
+        isHorizontalSwipeRef.current = true;
+      }
 
-  // Touch events fallback
-  const handleTouchStart = (e) => {
-    if (!isSwipeableSection || isSheetOpen) return;
-    if (e.target.closest('button, input, textarea, a, select, [data-no-swipe]')) return;
-    const touch = e.targetTouches[0];
-    if (touch) {
-      handleStart(touch.clientX, touch.clientY);
-    }
-  };
+      if (isHorizontalSwipeRef.current) {
+        const rotation = diffX * 0.03;
+        setDragOffset({ x: diffX, rot: rotation });
+      }
+    };
 
-  const handleTouchMove = (e) => {
-    if (!isDragging) return;
-    const touch = e.targetTouches[0];
-    if (touch) {
-      handleMove(touch.clientX, touch.clientY, e.cancelable, () => e.preventDefault());
-    }
-  };
+    const handleMouseUp = () => {
+      isMouseDraggingRef.current = false;
+      handleTouchEnd();
+    };
 
-  const handleTouchEnd = () => {
-    if (!isDragging) return;
-    handleEnd();
-  };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, isSwipeableSection, isSheetOpen, dragOffset.x]);
 
   return (
     <div 
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerCancel}
+      onMouseDown={handleMouseDown}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -174,7 +158,7 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
 
         {isSwipeableSection && (
           <div className="text-[10px] text-slate-500 text-center italic mt-2">
-            👉 Drag right to like · 👈 Drag left to dismiss (or ⬅/➔ keys)
+            👉 Drag far right to like · 👈 Drag far left to dismiss
           </div>
         )}
       </div>
@@ -387,46 +371,22 @@ export default function FeedPage() {
     }, 450);
   };
 
-  // Keyboard Arrow Navigation for Mac / Desktop
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (isAnySheetOpen || isCreatingPublication || isManagingCommunities) return;
-      if (activeTab !== 'my-news' && activeTab !== 'outside') return;
-      
-      const currentList = articlesData[activeTab] || [];
-      if (currentList.length === 0) return;
-      
-      const topItem = currentList[0];
-      if (!topItem) return;
-
-      if (e.key === 'ArrowRight') {
-        handleFeedback(topItem, 'like');
-        handleCardSwipeOut(topItem.id, 'right');
-      } else if (e.key === 'ArrowLeft') {
-        handleFeedback(topItem, 'dislike');
-        handleCardSwipeOut(topItem.id, 'left');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, articlesData, isAnySheetOpen, isCreatingPublication, isManagingCommunities]);
-
-  const handleStartFeed = (clientX, clientY) => {
+  const handleTouchStart = (e) => {
     if (isAnySheetOpen) return;
-    setTouchStartX(clientX);
-    setTouchStartY(clientY);
+    setTouchStartX(e.touches[0].clientX);
+    setTouchStartY(e.touches[0].clientY);
 
     if (isRefreshing) return;
     if (containerRef.current && containerRef.current.scrollTop <= 1) {
-      setStartY(clientY);
+      setStartY(e.touches[0].clientY);
       setIsDragging(true);
     }
   };
 
-  const handleMoveFeed = (clientY) => {
+  const handleTouchMove = (e) => {
     if (isAnySheetOpen || !isDragging || startY === 0) return;
-    const deltaY = clientY - startY;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - startY;
 
     if (deltaY > 0 && containerRef.current && containerRef.current.scrollTop <= 1) {
       const damped = Math.min(Math.pow(deltaY, 0.82) * 1.8, 120);
@@ -436,12 +396,14 @@ export default function FeedPage() {
     }
   };
 
-  const handleEndFeed = (clientX, clientY) => {
+  const handleTouchEnd = (e) => {
     if (isAnySheetOpen) return;
-    const diffX = clientX - touchStartX;
-    const diffY = clientY - touchStartY;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndY = e.changedTouches[0].clientY;
+    const diffX = touchEndX - touchStartX;
+    const diffY = touchEndY - touchStartY;
 
-    if (activeTab === 'communities' && Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
+    if (typeof window !== 'undefined' && window.innerWidth < 768 && activeTab === 'communities' && Math.abs(diffX) > 60 && Math.abs(diffY) < 40) {
       const currentIndex = subscribedCommunities.indexOf(selectedCommunity);
       if (diffX < 0) {
         const nextIndex = (currentIndex + 1) % subscribedCommunities.length;
@@ -462,40 +424,6 @@ export default function FeedPage() {
       setPullDistance(0);
     }
     setStartY(0);
-  };
-
-  // Pointer event handlers for feed (Mac mouse/trackpad & mobile)
-  const handlePointerDownMain = (e) => {
-    if (e.target.closest('button, input, textarea, a, select, [data-no-swipe]')) return;
-    handleStartFeed(e.clientX, e.clientY);
-  };
-
-  const handlePointerMoveMain = (e) => {
-    if (!isDragging) return;
-    handleMoveFeed(e.clientY);
-  };
-
-  const handlePointerUpMain = (e) => {
-    handleEndFeed(e.clientX, e.clientY);
-  };
-
-  // Touch event handlers for feed fallback
-  const handleTouchStartMain = (e) => {
-    if (e.target.closest('button, input, textarea, a, select, [data-no-swipe]')) return;
-    const touch = e.touches[0];
-    if (touch) handleStartFeed(touch.clientX, touch.clientY);
-  };
-
-  const handleTouchMoveMain = (e) => {
-    if (!isDragging) return;
-    const touch = e.touches[0];
-    if (touch) handleMoveFeed(touch.clientY);
-  };
-
-  const handleTouchEndMain = (e) => {
-    const touch = e.changedTouches[0];
-    if (touch) handleEndFeed(touch.clientX, touch.clientY);
-    else handleEndFeed(touchStartX, touchStartY);
   };
   
   const handleFeedback = (item, type) => {
@@ -530,12 +458,9 @@ export default function FeedPage() {
 
   return (
     <main
-      onPointerDown={handlePointerDownMain}
-      onPointerMove={handlePointerMoveMain}
-      onPointerUp={handlePointerUpMain}
-      onTouchStart={handleTouchStartMain}
-      onTouchMove={handleTouchMoveMain}
-      onTouchEnd={handleTouchEndMain}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row overflow-hidden select-none relative"
     >
       {/* DESKTOP SIDEBAR */}

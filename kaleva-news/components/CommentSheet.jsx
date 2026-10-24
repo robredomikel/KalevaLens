@@ -114,8 +114,7 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
         <div 
           className="absolute inset-x-0 bottom-0 top-[-200px] z-50 bg-slate-950/60 backdrop-blur-[2px] flex flex-col justify-end"
           onClick={handleClose}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerMove={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
