@@ -8,7 +8,6 @@ export default function ModeratorKanbanPage() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    // Simple mock authentication for hackathon demo (e.g. passcode: "kaleva2026")
     if (passcode === 'kaleva2026' || passcode === 'mod') {
       setIsAuthenticated(true);
     } else {
@@ -21,7 +20,7 @@ export default function ModeratorKanbanPage() {
       <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-md">
           <h1 className="text-xl font-black text-amber-400 mb-2">KALEVA MODERATOR PORTAL</h1>
-          <p className="text-xs text-slate-400 mb-6">Enter your authorized moderator credentials to access the 4-stage Kanban workflow.</p>
+          <p className="text-xs text-slate-400 mb-6">Enter your authorized moderator credentials to access the manual Kanban workflow.</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -58,7 +57,7 @@ export default function ModeratorKanbanPage() {
           <h1 className="text-base font-black tracking-wider text-amber-400">
             KALEVA <span className="text-white text-xs font-normal">MODERATOR KANBAN WORKFLOW</span>
           </h1>
-          <p className="text-[11px] text-slate-400">Review, fact-check AI verification scores, and publish citizen scoops.</p>
+          <p className="text-[11px] text-slate-400">Manual review pipeline for citizen news and community stories.</p>
         </div>
         <div className="flex items-center space-x-3">
           <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2.5 py-1 rounded-full font-bold">
