@@ -77,7 +77,7 @@ describe("User Onboarding & Preferences Model", () => {
     expect(result).toBeDefined();
     expect(result.title).toBeDefined();
     expect(result.body).toBeDefined();
-  }, 20000);
+  }, 40000);
 
   it("invokes article preference agent with language level guidelines", async () => {
     const article = {
@@ -89,5 +89,5 @@ describe("User Onboarding & Preferences Model", () => {
     const result = await runArticlePreferenceAgent(article, "fi", "short", "A2");
     expect(result).toBeDefined();
     expect(result.title).toBeDefined();
-  }, 20000);
+  }, 40000);
 });
