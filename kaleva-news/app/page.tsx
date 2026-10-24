@@ -19,6 +19,10 @@ import {
   getUserSubscribedCommunities, 
   toggleUserSubscription 
 } from '@/app/actions/subscriptions';
+import { 
+  createPublishedStory, 
+  getPublishedStoriesByUser 
+} from '@/app/actions/publishedNews';
 import ArticleMediaControls from '@/components/ArticleMediaControls';
 import PreferencesModal from '@/components/PreferencesModal';
 import OnboardingWizard from '@/components/OnboardingWizard';
@@ -169,6 +173,7 @@ function NewsCard({
         <div className="flex justify-between items-center mb-3">
           <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md">
             {item.community || 'Kaleva'} • {item.category || 'News'} {index === 0 && '🔥 (First)'}
+            {item.stage && ` • ${item.stage}`}
           </span>
           <div className="flex items-center space-x-2">
             {item.contentAccessLevel === 'SUMMARY_ONLY' ? (
@@ -393,21 +398,30 @@ export default function FeedPage() {
 
   // Fetch feed whenever activeTab, selectedCommunity, or communitySubTab changes
   useEffect(() => {
-    async function loadCommunityFeedData() {
+    async function loadFeedData() {
       if (activeTab === 'communities' && selectedCommunity) {
         setLoading(true);
         const isVerified = communitySubTab === 'verified';
         const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
         setCommunityArticles(stories);
         setLoading(false);
+      } else if (activeTab === 'published') {
+        setLoading(true);
+        const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
+        setArticlesData(prev => ({
+          ...prev,
+          published: userStories
+        }));
+        setLoading(false);
       }
     }
-    loadCommunityFeedData();
+    loadFeedData();
   }, [activeTab, selectedCommunity, communitySubTab]);
 
   // Load feeds dynamically when switching tabs, changing subscriptions, or updating preferences
   useEffect(() => {
     async function loadFeeds() {
+      if (activeTab === 'published' || activeTab === 'communities') return;
       setLoading(true);
       if (activeTab === 'my-news') {
         const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
@@ -518,22 +532,25 @@ export default function FeedPage() {
       return;
     }
 
-    const response = await submitToCommunity({
+    const response = await createPublishedStory({
+      userId: CURRENT_USER_ID,
       title: newPubTitle,
       summary: newPubContent,
       content: newPubContent,
       community: newPubCommunity,
-      category: 'Community Submission'
+      category: 'Community Post'
     });
 
     if (response.success) {
-      alert("Publication submitted successfully as unverified!");
+      alert("Publication created successfully and saved as PENDING!");
       setNewPubTitle('');
       setNewPubContent('');
       setIsCreatingPublication(false);
-      setSelectedCommunity(newPubCommunity);
-      setCommunitySubTab('unverified');
-      setActiveTab('communities');
+      
+      // Refresh published list
+      const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
+      setArticlesData(prev => ({ ...prev, published: userStories }));
+      setActiveTab('published');
     } else {
       alert(`Error creating publication: ${response.error}`);
     }
@@ -586,6 +603,9 @@ export default function FeedPage() {
       const isVerified = communitySubTab === 'verified';
       const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
       setCommunityArticles(stories);
+    } else if (activeTab === 'published') {
+      const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
+      setArticlesData(prev => ({ ...prev, published: userStories }));
     } else if (activeTab === 'my-news') {
       const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
       setArticlesData(prev => ({ ...prev, 'my-news': stories }));
@@ -674,6 +694,9 @@ export default function FeedPage() {
   const getActiveItems = () => {
     if (activeTab === 'communities') {
       return communityArticles;
+    }
+    if (activeTab === 'published') {
+      return articlesData['published'] || [];
     }
     return articlesData[activeTab] || [];
   };
