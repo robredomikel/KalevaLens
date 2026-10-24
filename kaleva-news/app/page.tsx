@@ -14,8 +14,9 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
   const [isDragging, setIsDragging] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
 
-  const activePointerRef = useRef(null);
-  const pointerStartRef = useRef({ x: 0, y: 0 });
+  const cardRef = useRef(null);
+  const activeTouchRef = useRef(null);
+  const touchStartRef = useRef({ x: 0, y: 0 });
   const dragOffsetRef = useRef(0);
   const dragAxisRef = useRef(null);
 
@@ -24,47 +25,16 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
     if (onSheetToggle) onSheetToggle(isOpen);
   };
 
-  // Pointer events + capture keep the gesture alive when an iPhone finger moves
-  // outside the card. `touchAction: pan-y` leaves vertical scrolling to Safari.
-  const handlePointerDown = (e) => {
-    if (!isSwipeableSection || isSheetOpen) return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('button, input, textarea, a, select')) return;
-
-    activePointerRef.current = e.pointerId;
-    pointerStartRef.current = { x: e.clientX, y: e.clientY };
-    dragOffsetRef.current = 0;
-    dragAxisRef.current = null;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setIsDragging(true);
-  };
-
-  const handlePointerMove = (e) => {
-    if (activePointerRef.current !== e.pointerId || isSheetOpen) return;
-    const diffX = e.clientX - pointerStartRef.current.x;
-    const diffY = e.clientY - pointerStartRef.current.y;
-
-    // Wait for a small amount of movement before locking the gesture axis.
-    // This avoids a slightly diagonal vertical scroll becoming a card swipe.
-    if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
-      dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
-    }
-
-    if (dragAxisRef.current === 'x') {
-      dragOffsetRef.current = diffX;
-      setDragOffset({ x: diffX, rot: diffX * 0.03 });
-    }
-  };
-
-  const finishPointerGesture = (e, cancelled = false) => {
-    if (activePointerRef.current !== e.pointerId) return;
-
+  const completeSwipe = (cancelled = false) => {
     const offsetX = dragOffsetRef.current;
-    activePointerRef.current = null;
+    activeTouchRef.current = null;
     dragAxisRef.current = null;
     setIsDragging(false);
 
-    if (!cancelled && Math.abs(offsetX) > 180) {
+    const cardWidth = cardRef.current?.offsetWidth || 400;
+    const swipeThreshold = Math.min(140, cardWidth * 0.32);
+
+    if (!cancelled && Math.abs(offsetX) > swipeThreshold) {
       if (offsetX > 0) {
         setDragOffset({ x: 600, rot: 30 });
         setTimeout(() => {
@@ -84,8 +54,108 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
     }
   };
 
+  // Safari may make React's delegated touchmove listener passive. Registering
+  // directly on the card lets us cancel horizontal page panning on iOS.
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card || !isSwipeableSection || isSheetOpen) return;
+
+    const findTouch = (touches) => Array.from(touches).find(
+      (touch) => touch.identifier === activeTouchRef.current
+    );
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) return;
+      if (e.target.closest?.('button, input, textarea, a, select')) return;
+      const touch = e.touches[0];
+      activeTouchRef.current = touch.identifier;
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+      dragOffsetRef.current = 0;
+      dragAxisRef.current = null;
+      setIsDragging(true);
+    };
+
+    const onTouchMove = (e) => {
+      const touch = findTouch(e.touches);
+      if (!touch) return;
+      const diffX = touch.clientX - touchStartRef.current.x;
+      const diffY = touch.clientY - touchStartRef.current.y;
+
+      if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
+        dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
+      }
+
+      if (dragAxisRef.current === 'x') {
+        e.preventDefault();
+        dragOffsetRef.current = diffX;
+        setDragOffset({ x: diffX, rot: diffX * 0.03 });
+      }
+    };
+
+    const onTouchEnd = (e) => {
+      if (!findTouch(e.changedTouches)) return;
+      completeSwipe(false);
+    };
+
+    const onTouchCancel = (e) => {
+      if (!findTouch(e.changedTouches)) return;
+      // WebKit can emit touchcancel when a finger leaves the original nested
+      // scroll area. Keep a confirmed horizontal swipe instead of discarding it.
+      completeSwipe(dragAxisRef.current !== 'x');
+    };
+
+    card.addEventListener('touchstart', onTouchStart, { passive: true });
+    // Capture on window so Safari cannot strand the gesture when it retargets
+    // the touch from the card to its nested scrolling container.
+    window.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
+    window.addEventListener('touchcancel', onTouchCancel, { passive: true, capture: true });
+    return () => {
+      card.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchmove', onTouchMove, true);
+      window.removeEventListener('touchend', onTouchEnd, true);
+      window.removeEventListener('touchcancel', onTouchCancel, true);
+    };
+  });
+
+  // Pointer events retain desktop mouse dragging without affecting iOS touch.
+  const handlePointerDown = (e) => {
+    if (!isSwipeableSection || isSheetOpen || e.pointerType !== 'mouse' || e.button !== 0) return;
+    if (e.target.closest('button, input, textarea, a, select')) return;
+
+    activeTouchRef.current = e.pointerId;
+    touchStartRef.current = { x: e.clientX, y: e.clientY };
+    dragOffsetRef.current = 0;
+    dragAxisRef.current = null;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDragging(true);
+  };
+
+  const handlePointerMove = (e) => {
+    if (e.pointerType !== 'mouse' || activeTouchRef.current !== e.pointerId || isSheetOpen) return;
+    const diffX = e.clientX - touchStartRef.current.x;
+    const diffY = e.clientY - touchStartRef.current.y;
+
+    // Wait for a small amount of movement before locking the gesture axis.
+    // This avoids a slightly diagonal vertical scroll becoming a card swipe.
+    if (!dragAxisRef.current && Math.hypot(diffX, diffY) >= 8) {
+      dragAxisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
+    }
+
+    if (dragAxisRef.current === 'x') {
+      dragOffsetRef.current = diffX;
+      setDragOffset({ x: diffX, rot: diffX * 0.03 });
+    }
+  };
+
+  const finishPointerGesture = (e, cancelled = false) => {
+    if (e.pointerType !== 'mouse' || activeTouchRef.current !== e.pointerId) return;
+    completeSwipe(cancelled);
+  };
+
   return (
     <div 
+      ref={cardRef}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerGesture}
@@ -349,8 +419,16 @@ export default function FeedPage() {
 
   const handleTouchMove = (e) => {
     if (isAnySheetOpen || !isDragging || startY === 0) return;
+    const deltaX = e.touches[0].clientX - touchStartX;
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - startY;
+
+    // A card owns horizontal gestures. Do not let pull-to-refresh translate
+    // the whole feed while an iPhone user is swiping a story.
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      setPullDistance(0);
+      return;
+    }
 
     if (deltaY > 0 && containerRef.current && containerRef.current.scrollTop <= 1) {
       const damped = Math.min(Math.pow(deltaY, 0.82) * 1.8, 120);
