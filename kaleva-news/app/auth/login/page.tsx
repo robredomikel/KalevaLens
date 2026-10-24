@@ -1,20 +1,23 @@
 'use client';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { getUserProfile, setSession } from '@/lib/profile';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!email || !password) {
       alert("Please fill in all fields.");
       return;
     }
-    // Mock customer login action
-    alert(`Welcome back, ${email}! Logging into Kaleva Micro-News...`);
-    window.location.href = '/';
+    const session = setSession(email);
+    const profile = getUserProfile(session.userId);
+    router.push(profile?.onboardingCompleted ? '/' : '/onboarding');
   };
 
   return (
@@ -65,7 +68,7 @@ export default function LoginPage() {
 
         {/* Footer Link */}
         <div className="mt-6 text-center text-xs text-slate-400">
-          Don't have an account?{' '}
+          Don&apos;t have an account?{' '}
           <Link href="/auth/signup" className="text-amber-400 font-bold hover:underline">
             Create account
           </Link>

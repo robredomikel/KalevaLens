@@ -1,6 +1,10 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { mockSectionsData } from '@/data/mockNews';
+import { getAvailableCommunities } from '@/data/communities';
+import { getSession, getUserProfile } from '@/lib/profile';
 import { trackArticleFeedback } from '@/lib/userService';
 import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
@@ -263,14 +267,11 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
 
 // ─── MAIN FEED PAGE ───
 export default function FeedPage() {
+  const router = useRouter();
+  const [profileReady, setProfileReady] = useState(false);
   const [activeTab, setActiveTab] = useState('my-news');
 
-  const [allAvailableCommunities] = useState([
-    'Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture', 
-    'Oulu Startup Founders', 'University Students Oulu', 'Northern Finland Real Estate',
-    'Oulu Cycling & Outdoors', 'Local Musicians & Artists', 'Oulu Gaming & Esports',
-    'Ostrobothnia Weather Watchers', 'Oulu Volunteer Network', 'Finnish Tech News'
-  ]);
+  const [allAvailableCommunities] = useState(() => getAvailableCommunities().map((community) => community.name));
 
   const [subscribedCommunities, setSubscribedCommunities] = useState(['Oulu Tech Hub', 'Northern Photographers', 'Oulu Food & Culture']);
   const [selectedCommunity, setSelectedCommunity] = useState('Oulu Tech Hub');
@@ -300,6 +301,20 @@ export default function FeedPage() {
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
+
+  useEffect(() => {
+    const session = getSession();
+    if (!session) {
+      router.replace('/auth/login');
+      return;
+    }
+    if (!getUserProfile(session.userId)?.onboardingCompleted) {
+      router.replace('/onboarding');
+      return;
+    }
+    const timer = window.setTimeout(() => setProfileReady(true), 0);
+    return () => window.clearTimeout(timer);
+  }, [router]);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -498,6 +513,10 @@ export default function FeedPage() {
     c.toLowerCase().includes(communitySearchQuery.toLowerCase())
   );
 
+  if (!profileReady) {
+    return <main className="min-h-screen bg-slate-950 grid place-items-center text-amber-400">Loading your news profile…</main>;
+  }
+
   return (
     <main
       onTouchStart={handleTouchStart}
@@ -546,6 +565,9 @@ export default function FeedPage() {
 
       {/* MAIN CONTENT WORKSPACE */}
       <div className="flex-1 flex flex-col items-center h-screen overflow-hidden py-3 px-3 relative">
+        <Link href="/settings" className="fixed right-4 top-3 z-40 rounded-full border border-slate-700 bg-slate-900/90 px-3 py-2 text-xs font-bold text-amber-400 shadow-lg backdrop-blur" aria-label="Open news preferences">
+          ⚙ Preferences
+        </Link>
         
         {/* Communities Subnav */}
         {activeTab === 'communities' && (
