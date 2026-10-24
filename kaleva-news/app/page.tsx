@@ -4,7 +4,13 @@ import { mockSectionsData } from '@/data/mockNews';
 import { trackArticleFeedback } from '@/lib/userService';
 import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
-import { getPriorityNewsFeed, markStoryAsRead } from '@/app/actions/news';
+import { getBlendedNewsFeed } from '@/app/actions/news';
+import { markStoryAsRead } from '@/app/actions/news';
+import { getPersonalizedFeed } from '@/app/actions/personalizedNews';
+import { getBlendedOutsidePriorityFeed } from '@/app/actions/blendedNews';
+
+const CURRENT_USER_ID = "123";
+
 
 // ─── EXTRACTED CARD COMPONENT ───
 function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handleCardSwipeOut, onSheetToggle }) {
@@ -97,7 +103,7 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
           <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2 py-0.5 rounded">
             {item.community} • {item.category} {index === 0 && '🔥 (First)'}
           </span>
-          <span className="text-[11px] text-slate-400">{item.readTime}</span>
+          <span className="text-[11px] text-slate-400">{item.readTime || '1 min read'}</span>
         </div>
 
         <h2 className="text-lg sm:text-xl font-bold mt-1 mb-3 leading-snug text-white">
@@ -105,19 +111,18 @@ function NewsCard({ item, index, activeTab, userFeedback, handleFeedback, handle
         </h2>
 
         <ul className="space-y-2.5 mb-4">
-  {(() => {
-    // Convert summary to an array if it's a string, or split by newline/sentences if needed
-    const summaries = Array.isArray(item.summary) 
-      ? item.summary 
-      : item.summary ? [item.summary] : [];
+          {(() => {
+            const summaries = Array.isArray(item.summary) 
+              ? item.summary 
+              : item.summary ? [item.summary] : [];
 
-    return summaries.map((bullet, idx) => (
-      <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
-        <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
-      </li>
-    ));
-  })()}
-</ul>
+            return summaries.map((bullet, idx) => (
+              <li key={idx} className="text-slate-300 text-xs sm:text-sm flex items-start leading-relaxed">
+                <span className="text-amber-400 mr-2 font-bold">•</span> {bullet}
+              </li>
+            ));
+          })()}
+        </ul>
 
         {isSwipeableSection && (
           <div className="text-[10px] text-slate-500 text-center italic mt-2">
@@ -226,29 +231,127 @@ export default function FeedPage() {
   const [newPubTitle, setNewPubTitle] = useState('');
   const [newPubContent, setNewPubContent] = useState('');
   const [newPubCommunity, setSelectedPubCommunity] = useState('Oulu Tech Hub');
-  const [pageOffset, setPageOffset] = useState(0);
-const [hasMore, setHasMore] = useState(true);
-const [isLoadingMore, setIsLoadingMore] = useState(false);
 
+  // Pagination States for Infinite Scroll
+  const [pageOffset, setPageOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  const [outsideOffset, setOutsideOffset] = useState(0);
+  const [hasMoreOutside, setHasMoreOutside] = useState(true);
+  const [isLoadingMoreOutside, setIsLoadingMoreOutside] = useState(false);
+
+
+// Load Outside / Blended Feed on Tab Switch
+useEffect(() => {
+  async function loadFeeds() {
+    if (activeTab === 'outside') {
+      setLoading(true);
+      const blendedStories = await getBlendedNewsFeed('current-user-id', 10, 0);
+      setArticlesData(prev => ({
+        ...prev,
+        outside: blendedStories
+      }));
+      setLoading(false);
+    }
+  }
+  loadFeeds();
+}, [activeTab]);
 
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
 
-  // Inside your FeedPage component:
+  // Load feeds dynamically when switching tabs or changing subscriptions
 useEffect(() => {
-  async function loadFeed() {
+  async function loadFeeds() {
     setLoading(true);
-    const liveStories = await getPriorityNewsFeed('current-user-id'); // Replace with actual logged-in user ID or state
-    setArticlesData(prev => ({
-      ...prev,
-      'my-news': liveStories
-    }));
+    if (activeTab === 'my-news') {
+      const stories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, 0);
+      setArticlesData(prev => ({
+        ...prev,
+        'my-news': stories
+      }));
+      setPageOffset(0);
+      setHasMore(true);
+    } else if (activeTab === 'outside') {
+      const blendedStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+      setArticlesData(prev => ({
+        ...prev,
+        outside: blendedStories
+      }));
+      setOutsideOffset(0);
+      setHasMoreOutside(true);
+    }
     setLoading(false);
   }
-  loadFeed();
-}, [activeTab]);
+  loadFeeds();
+}, [activeTab, subscribedCommunities]);
+
+// Infinite scroll loader for 'My News' (Personalized Subscriptions)
+const loadMoreArticles = async () => {
+  if (isLoadingMore || !hasMore) return;
+  setIsLoadingMore(true);
+
+  const nextOffset = pageOffset + 10;
+  const moreStories = await getPersonalizedFeed('current-user-id', subscribedCommunities, 10, nextOffset);
+
+  if (moreStories.length === 0) {
+    setHasMore(false);
+  } else {
+    setArticlesData(prev => ({
+      ...prev,
+      'my-news': [...(prev['my-news'] || []), ...moreStories]
+    }));
+    setPageOffset(nextOffset);
+  }
+  setIsLoadingMore(false);
+};
+
+// Infinite scroll loader for 'Outside Sources' (Blended Ratio Feed)
+const loadMoreOutsideArticles = async () => {
+  if (isLoadingMoreOutside || !hasMoreOutside) return;
+  setIsLoadingMoreOutside(true);
+
+  const nextOffset = outsideOffset + 10;
+  const moreStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+
+  if (moreStories.length === 0) {
+    setHasMoreOutside(false);
+  } else {
+    setArticlesData(prev => ({
+      ...prev,
+      outside: [...(prev.outside || []), ...moreStories]
+    }));
+    setOutsideOffset(nextOffset);
+  }
+  setIsLoadingMoreOutside(false);
+};
 
   
+  // Load My News Feed on Mount / Tab Switch
+  useEffect(() => {
+    async function loadFeed() {
+      if (activeTab === 'my-news') {
+        setLoading(true);
+        const liveStories = await getPersonalizedFeed('current-user-id', 10, 0);
+        setArticlesData(prev => ({
+          ...prev,
+          'my-news': liveStories
+        }));
+        setLoading(false);
+      } else if (activeTab === 'outside') {
+        setLoading(true);
+        const outsideStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+        setArticlesData(prev => ({
+          ...prev,
+          outside: outsideStories
+        }));
+        setLoading(false);
+      }
+    }
+    loadFeed();
+  }, [activeTab]);
+
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       const activeBtn = communityButtonRefs.current[selectedCommunity];
@@ -262,27 +365,11 @@ useEffect(() => {
     }
   }, [selectedCommunity]);
 
-  const loadMoreArticles = async () => {
-  if (isLoadingMore || !hasMore) return;
-  setIsLoadingMore(true);
-
-  const nextOffset = pageOffset + 10;
-  const moreStories = await getPriorityNewsFeed('current-user-id', 10, nextOffset);
-
-  if (moreStories.length === 0) {
-    setHasMore(false);
-  } else {
-    setArticlesData(prev => ({
-      ...prev,
-      [activeTab]: [...(prev[activeTab] || []), ...moreStories]
-    }));
-    setPageOffset(nextOffset);
-  }
-  setIsLoadingMore(false);
-};
-
   
   const handleCardSwipeOut = (itemId, direction) => {
+    // Mark story as read in backend history so it drops to seen fallback queue
+    markStoryAsRead(CURRENT_USER_ID, itemId);
+
     setArticlesData((prevData) => {
       const currentList = prevData[activeTab] || [];
       return {
@@ -567,11 +654,15 @@ useEffect(() => {
             <div 
               ref={containerRef}
               onScroll={(e) => {
-    const target = e.currentTarget;
-    if (target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
-      loadMoreArticles();
-    }
-  }}
+                const target = e.currentTarget;
+                if (target.scrollHeight - target.scrollTop <= target.clientHeight + 150) {
+                  if (activeTab === 'my-news') {
+                    loadMoreArticles();
+                  } else if (activeTab === 'outside') {
+                    loadMoreOutsideArticles();
+                  }
+                }
+              }}
               style={{
                 transform: `translateY(${pullDistance}px)`,
                 transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
@@ -599,31 +690,36 @@ useEffect(() => {
                   onSheetToggle={setIsAnySheetOpen}
                 />
               ))}
+
+              {/* Tab-aware Loading Indicators */}
+              {activeTab === 'my-news' && isLoadingMore && (
+                <div className="text-center py-4 text-amber-400 text-xs animate-pulse col-span-2">
+                  Loading more unseen news...
+                </div>
+              )}
+              {activeTab === 'outside' && isLoadingMoreOutside && (
+                <div className="text-center py-4 text-amber-400 text-xs animate-pulse col-span-2">
+                  Loading more blended outside sources...
+                </div>
+              )}
             </div>
           )}
-           {isLoadingMore && (
-    <div className="text-center py-4 text-amber-400 text-xs animate-pulse">
-      Loading more unseen news...
-    </div>
-  )}
         </div>
 
         {/* ─── FLOATING ACTION BUTTON (FAB) ─── */}
-      {activeTab === 'published' && (
-        <button
-          onClick={() => setIsCreatingPublication(true)}
-          className="fixed right-6 bottom-20 md:bottom-8 z-50 bg-amber-400 text-slate-950 w-14 h-14 rounded-full flex items-center justify-center font-black shadow-2xl hover:bg-amber-300 transition-transform active:scale-95 border-2 border-slate-950"
-          title="Create New Publication"
-        >
-          <span className="text-3xl leading-none mb-0.5">+</span>
-        </button>
-      )}
-
-
+        {activeTab === 'published' && (
+          <button
+            onClick={() => setIsCreatingPublication(true)}
+            className="fixed right-6 bottom-20 md:bottom-8 z-50 bg-amber-400 text-slate-950 w-14 h-14 rounded-full flex items-center justify-center font-black shadow-2xl hover:bg-amber-300 transition-transform active:scale-95 border-2 border-slate-950"
+            title="Create New Publication"
+          >
+            <span className="text-3xl leading-none mb-0.5">+</span>
+          </button>
+        )}
 
         {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 py-2.5 px-4 z-40 max-w-md mx-auto rounded-t-2xl shadow-2xl flex justify-around items-center md:hidden">
-        <button 
+        <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 py-2.5 px-4 z-40 max-w-md mx-auto rounded-t-2xl shadow-2xl flex justify-around items-center md:hidden">
+          <button 
             onClick={() => { setActiveTab('my-news'); setPullDistance(0); }}
             className={`flex flex-col items-center flex-1 py-1 transition ${activeTab === 'my-news' ? 'text-amber-400 font-bold' : 'text-slate-400 hover:text-white'}`}
           >
