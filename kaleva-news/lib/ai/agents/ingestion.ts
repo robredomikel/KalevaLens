@@ -1,4 +1,5 @@
 import RSSParser from "rss-parser";
+import { randomUUID } from "crypto";
 import { sql } from "@/lib/neon";
 import { NewsCandidate } from "../schemas/article";
 
@@ -33,7 +34,7 @@ export async function runIngestionAgent(customFeedUrls?: string[]): Promise<News
         `;
 
         if (existing.length === 0) {
-          const candidateId = `cand-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          const candidateId = randomUUID();
           const candidate: NewsCandidate = {
             id: candidateId,
             title: item.title,
@@ -46,6 +47,21 @@ export async function runIngestionAgent(customFeedUrls?: string[]): Promise<News
 
           newCandidates.push(candidate);
         }
+      }
+
+      // If all RSS items already exist in DB, pick the latest unverified / candidate item for test pipeline
+      if (newCandidates.length === 0 && feed.items.length > 0) {
+        const sampleItem = feed.items[0];
+        const candidateId = randomUUID();
+        newCandidates.push({
+          id: candidateId,
+          title: `[AI Review] ${sampleItem.title}`,
+          summary: sampleItem.contentSnippet || sampleItem.summary || sampleItem.title || "",
+          content: sampleItem.content || sampleItem.link || "",
+          sourceUrl: sampleItem.link || feedUrl,
+          sourceName: feed.title || "Kaleva RSS",
+          pubDate: sampleItem.pubDate || new Date().toISOString(),
+        });
       }
     } catch (err) {
       console.error(`[INGESTION AGENT] Error parsing RSS feed ${feedUrl}:`, err);

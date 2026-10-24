@@ -20,7 +20,7 @@ export async function ensureDatabaseSchema() {
       );
     `;
 
-    // 2. Ensure StorySubmission table
+    // 2. Ensure StorySubmission table & columns
     await sql`
       CREATE TABLE IF NOT EXISTS "StorySubmission" (
         "id" TEXT PRIMARY KEY,
@@ -40,6 +40,12 @@ export async function ensureDatabaseSchema() {
         "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `;
+
+    // Alter existing StorySubmission table if new columns are missing
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "aiScore" INT DEFAULT 50;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "verificationReport" JSONB;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "evidenceReferences" JSONB;`;
+    await sql`ALTER TABLE "StorySubmission" ADD COLUMN IF NOT EXISTS "workflowId" TEXT;`;
 
     // 3. Ensure AgentExecutionLog table
     await sql`

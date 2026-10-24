@@ -1,4 +1,5 @@
 import { StateGraph, MemorySaver, START, END, interrupt } from "@langchain/langgraph";
+import { randomUUID } from "crypto";
 import { EditorialWorkflowAnnotation, EditorialWorkflowState } from "./state";
 import { runIngestionAgent } from "../agents/ingestion";
 import { runClassificationAgent } from "../agents/classification";
@@ -56,7 +57,7 @@ function routeSourceRisk(state: EditorialWorkflowState) {
 
 async function hitl1SourceInvestigationNode(state: EditorialWorkflowState) {
   await ensureDatabaseSchema();
-  const taskId = `task-hitl1-${state.workflowId}`;
+  const taskId = randomUUID();
 
   // Persist Editorial Task for Moderator
   await sql`
@@ -65,7 +66,7 @@ async function hitl1SourceInvestigationNode(state: EditorialWorkflowState) {
     ) VALUES (
       ${taskId},
       ${state.workflowId},
-      ${state.candidate?.id || "unknown"},
+      ${state.candidate?.id || randomUUID()},
       'HITL_SOURCE_INVESTIGATION',
       'PENDING',
       ${JSON.stringify({
@@ -163,8 +164,8 @@ async function hitl2FinalApprovalNode(state: EditorialWorkflowState) {
   await ensureDatabaseSchema();
   if (!state.draft) throw new Error("Missing draft for final approval.");
 
-  const storyId = state.candidate?.id || `story-${Date.now()}`;
-  const taskId = `task-hitl2-${state.workflowId}`;
+  const storyId = state.candidate?.id || randomUUID();
+  const taskId = randomUUID();
 
   // 1. Create or Update StorySubmission in REVIEW stage in DB
   await sql`
@@ -251,7 +252,7 @@ async function publicationNode(state: EditorialWorkflowState) {
   await ensureDatabaseSchema();
   if (!state.draft) throw new Error("Missing draft for publication.");
 
-  const storyId = state.candidate?.id || `story-${Date.now()}`;
+  const storyId = state.candidate?.id || randomUUID();
 
   // 1. Publish Article in Database
   await sql`
@@ -268,7 +269,7 @@ async function publicationNode(state: EditorialWorkflowState) {
       await sql`
         INSERT INTO "ArticleTranslation" (id, "storyId", language, title, summary, content)
         VALUES (
-          ${`trans-${storyId}-${lang}`},
+          ${randomUUID()},
           ${storyId},
           ${lang},
           ${translation.title},
@@ -290,7 +291,7 @@ async function publicationNode(state: EditorialWorkflowState) {
     await sql`
       INSERT INTO "ArticleContext" (id, "storyId", "explanationType", explanation)
       VALUES (
-        ${`ctx-${storyId}`},
+        ${randomUUID()},
         ${storyId},
         ${context.explanationType},
         ${context.explanation}
@@ -305,7 +306,7 @@ async function publicationNode(state: EditorialWorkflowState) {
     INSERT INTO "AgentExecutionLog" (
       id, "workflowId", "agentName", model, status, "durationMs", "tokenUsage", "outputReferences"
     ) VALUES (
-      ${`log-${Date.now()}`},
+      ${randomUUID()},
       ${state.workflowId},
       'editorialWorkflow',
       'gemini-2.5-flash',

@@ -1,6 +1,7 @@
 'use server';
 
 import { sql } from '@/lib/neon';
+import { randomUUID } from 'crypto';
 import { fetchAndAutoPublishRSS } from '@/lib/rss';
 import { ensureDatabaseSchema } from '@/lib/db/init';
 import { editorialWorkflowApp } from '@/lib/ai/workflows/editorial';
@@ -54,7 +55,7 @@ export async function getPriorityNewsFeed(userId, limit = 10, offset = 0) {
  */
 export async function triggerEditorialWorkflow(customCandidate = null) {
   await ensureDatabaseSchema();
-  const workflowId = `wf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+  const workflowId = randomUUID();
 
   try {
     let candidate = customCandidate;
@@ -70,7 +71,7 @@ export async function triggerEditorialWorkflow(customCandidate = null) {
     const initialState = {
       workflowId,
       candidate,
-      status: 'IN_PROGRESS' as const,
+      status: 'IN_PROGRESS',
       executionLogs: [],
     };
 
@@ -85,7 +86,7 @@ export async function triggerEditorialWorkflow(customCandidate = null) {
       publishedStoryId: finalState.publishedStoryId,
       draft: finalState.draft,
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error triggering editorial workflow:', error);
     return { success: false, error: error.message };
   }
@@ -112,7 +113,7 @@ export async function getPendingEditorialTasks() {
     `;
 
     return { success: true, submissions, tasks };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching moderator tasks:', error);
     return { success: false, submissions: [], tasks: [], error: error.message };
   }
@@ -127,12 +128,6 @@ export async function submitModeratorDecision({
   decision, // 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES'
   notes = '',
   moderatorId = 'MOD-07',
-}: {
-  taskId?: string;
-  storyId: string;
-  decision: 'APPROVE' | 'REJECT' | 'REQUEST_CHANGES';
-  notes?: string;
-  moderatorId?: string;
 }) {
   await ensureDatabaseSchema();
 
@@ -172,7 +167,7 @@ export async function submitModeratorDecision({
     }
 
     return { success: true, newStage };
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error submitting moderator decision:', error);
     return { success: false, error: error.message };
   }
@@ -181,14 +176,14 @@ export async function submitModeratorDecision({
 /**
  * Get personalized news feed using Gemini Personalization Agent
  */
-export async function getPersonalizedNewsFeed(userPrefs: any) {
+export async function getPersonalizedNewsFeed(userPrefs) {
   await ensureDatabaseSchema();
   const rawArticles = await getPriorityNewsFeed(userPrefs?.userId);
 
   if (!rawArticles || rawArticles.length === 0) return [];
 
   try {
-    const formattedForAgent = rawArticles.map((a: any) => ({
+    const formattedForAgent = rawArticles.map((a) => ({
       id: a.id,
       title: a.title,
       category: a.category || 'Local News',
@@ -200,7 +195,7 @@ export async function getPersonalizedNewsFeed(userPrefs: any) {
 
     const rankingMap = new Map(rankings.map((r) => [r.storyId, r.relevanceScore]));
 
-    return [...rawArticles].sort((a: any, b: any) => {
+    return [...rawArticles].sort((a, b) => {
       const scoreA = rankingMap.get(a.id) ?? 50;
       const scoreB = rankingMap.get(b.id) ?? 50;
       return scoreB - scoreA;
