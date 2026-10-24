@@ -133,7 +133,38 @@ export function saveUserProfile(profile: UserProfile): UserProfile {
   const errors = validateProfile(normalized)
   if (errors.length) throw new Error(errors[0])
   localStorage.setItem(profileKey(profile.userId), JSON.stringify(normalized))
+  void syncProfileToServer(normalized)
   return normalized
+}
+
+export async function syncProfileToServer(profile: UserProfile): Promise<boolean> {
+  try {
+    const response = await fetch('/api/profile', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preferences: profile.preferences, communityId: profile.communityId,
+        onboardingCompleted: profile.onboardingCompleted, onboardingCompletedAt: profile.onboardingCompletedAt,
+        currentQuestion: profile.currentQuestion,
+      }),
+    })
+    return response.ok
+  } catch { return false }
+}
+
+export async function fetchServerProfile(userId: string): Promise<UserProfile | null> {
+  try {
+    const response = await fetch('/api/profile')
+    if (!response.ok) return null
+    const server = await response.json()
+    if (!server) return null
+    const profile: UserProfile = {
+      userId, preferences: server.preferences, communityId: server.communityId,
+      onboardingCompleted: server.onboardingCompleted, onboardingCompletedAt: server.onboardingCompletedAt,
+      currentQuestion: server.currentQuestion, createdAt: server.createdAt, updatedAt: server.updatedAt,
+    }
+    localStorage.setItem(profileKey(userId), JSON.stringify(profile))
+    return profile
+  } catch { return null }
 }
 
 export function completeOnboarding(profile: UserProfile): UserProfile {

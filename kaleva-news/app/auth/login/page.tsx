@@ -9,13 +9,14 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleLogin = (e: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!email || !password) {
       alert("Please fill in all fields.");
       return;
     }
     const session = setSession(email);
+    try { await fetch('/api/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) }); } catch { /* Browser prototype remains usable without PostgreSQL. */ }
     const profile = getUserProfile(session.userId);
     router.push(profile?.onboardingCompleted ? '/' : '/onboarding');
   };

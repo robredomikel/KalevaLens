@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const dummyComments = [
   {
@@ -35,6 +35,43 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
   
   const [replyingTo, setReplyingTo] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [isPersistent, setIsPersistent] = useState(false);
+  const [requestError, setRequestError] = useState('');
+
+  const formatComment = (comment) => ({
+    id: comment.id,
+    author: comment.author?.name || 'KalevaLens reader',
+    authorType: '',
+    text: comment.body,
+    timestamp: comment.createdAt ? new Date(comment.createdAt).toLocaleString() : 'Just now',
+    replies: (comment.replies || []).map((reply) => ({
+      id: reply.id,
+      author: reply.author?.name || 'KalevaLens reader',
+      text: reply.body,
+      timestamp: reply.createdAt ? new Date(reply.createdAt).toLocaleString() : 'Just now'
+    }))
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const loadComments = async () => {
+      try {
+        const response = await fetch(`/api/articles/${encodeURIComponent(articleId)}/comments`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const savedComments = await response.json();
+        if (!cancelled && Array.isArray(savedComments)) {
+          setComments(savedComments.map(formatComment));
+          setIsPersistent(true);
+          setRequestError('');
+        }
+      } catch {
+        // Mock articles deliberately retain the existing in-memory discussion.
+      }
+    };
+    void loadComments();
+    return () => { cancelled = true; };
+  }, [articleId, isOpen]);
 
   const totalCount = comments.reduce((acc, c) => acc + 1 + c.replies.length, 0);
 
@@ -59,9 +96,26 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
     }
   };
 
-  const addComment = (e) => {
+  const addComment = async (e) => {
     e.preventDefault();
     if (!newCommentText.trim()) return;
+    if (isPersistent) {
+      const response = await fetch(`/api/articles/${encodeURIComponent(articleId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: newCommentText })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setRequestError(body.error || 'Unable to save your comment.');
+        return;
+      }
+      const saved = await response.json();
+      setComments([{ ...formatComment(saved), author: 'You' }, ...comments]);
+      setNewCommentText('');
+      setRequestError('');
+      return;
+    }
     const newComm = {
       id: Date.now(),
       author: 'You (Journalist)',
@@ -74,9 +128,24 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
     setNewCommentText('');
   };
 
-  const addReply = (commentId, e) => {
+  const addReply = async (commentId, e) => {
     e.preventDefault();
     if (!replyText.trim()) return;
+
+    let savedReply = null;
+    if (isPersistent) {
+      const response = await fetch(`/api/articles/${encodeURIComponent(articleId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: replyText, parentId: commentId })
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setRequestError(body.error || 'Unable to save your reply.');
+        return;
+      }
+      savedReply = await response.json();
+    }
 
     setComments(comments.map(comment => {
       if (comment.id === commentId) {
@@ -85,7 +154,7 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
           replies: [
             ...comment.replies,
             {
-              id: Date.now(),
+              id: savedReply?.id || Date.now(),
               author: 'You (Journalist)',
               text: replyText,
               timestamp: 'Just now'
@@ -98,6 +167,7 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
 
     setReplyText('');
     setReplyingTo(null);
+    setRequestError('');
   };
 
   return (
@@ -203,6 +273,7 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
             </div>
 
             <form onSubmit={addComment} className="p-3 border-t border-slate-800 flex items-center gap-2 bg-slate-950 shrink-0">
+              {requestError && <span className="sr-only" role="alert">{requestError}</span>}
               <input 
                 type="text"
                 placeholder="Share your thoughts..."

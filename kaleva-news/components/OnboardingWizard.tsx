@@ -8,6 +8,7 @@ import {
   createEmptyProfile,
   getSession,
   getUserProfile,
+  fetchServerProfile,
   saveUserProfile,
   type UserPreferences,
   type UserProfile,
@@ -84,18 +85,15 @@ export default function OnboardingWizard({ mode = 'onboarding' }: { mode?: Wizar
       router.replace('/auth/login')
       return
     }
-    const loaded = getUserProfile(session.userId) ?? createEmptyProfile(session.userId)
-    if (mode === 'onboarding' && loaded.onboardingCompleted) {
-      router.replace('/')
-      return
-    }
     const timer = window.setTimeout(() => {
-      const knownCodes = knownLanguages.map((language) => language.value)
-      if (loaded.preferences.preferredLanguage && !knownCodes.includes(loaded.preferences.preferredLanguage)) {
-        setCustomLanguage(loaded.preferences.preferredLanguage)
-      }
-      setProfile(loaded)
-      setQuestion(mode === 'settings' ? 0 : Math.min(loaded.currentQuestion, 10))
+      void (async () => {
+        const loaded = await fetchServerProfile(session.userId) ?? getUserProfile(session.userId) ?? createEmptyProfile(session.userId)
+        if (mode === 'onboarding' && loaded.onboardingCompleted) { router.replace('/'); return }
+        const knownCodes = knownLanguages.map((language) => language.value)
+        if (loaded.preferences.preferredLanguage && !knownCodes.includes(loaded.preferences.preferredLanguage)) setCustomLanguage(loaded.preferences.preferredLanguage)
+        setProfile(loaded)
+        setQuestion(mode === 'settings' ? 0 : Math.min(loaded.currentQuestion, 10))
+      })()
     }, 0)
     return () => window.clearTimeout(timer)
   }, [mode, router])

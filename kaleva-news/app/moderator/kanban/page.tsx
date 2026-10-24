@@ -1,18 +1,27 @@
 'use client';
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import KanbanBoard from '@/components/moderator/KanbanBoard';
 
 export default function ModeratorKanbanPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState('');
 
-  const handleLogin = (e) => {
+  const [error, setError] = useState('');
+
+  const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (passcode === 'kaleva2026' || passcode === 'mod') {
+    setError('');
+    const response = await fetch('/api/auth/moderator', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode }) });
+    if (response.ok) {
       setIsAuthenticated(true);
     } else {
-      alert("Invalid moderator passcode. Try 'kaleva2026'");
+      setError('Invalid moderator credentials or the database is unavailable.');
     }
+  };
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => undefined);
+    setIsAuthenticated(false);
   };
 
   if (!isAuthenticated) {
@@ -27,7 +36,7 @@ export default function ModeratorKanbanPage() {
               <label className="block text-xs font-bold text-slate-300 mb-1">Moderator Passcode</label>
               <input 
                 type="password"
-                placeholder="Enter passcode (e.g. kaleva2026)"
+                placeholder="Enter moderator passcode"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
@@ -40,10 +49,9 @@ export default function ModeratorKanbanPage() {
             >
               Access Kanban Dashboard 🔐
             </button>
+            {error && <p className="text-xs text-rose-400" role="alert">{error}</p>}
           </form>
-          <div className="mt-4 text-[10px] text-slate-500 text-center">
-            Hint for hackathon demo: Passcode is <code className="text-amber-400">kaleva2026</code>
-          </div>
+          <div className="mt-4 text-[10px] text-slate-500 text-center">The passcode is configured server-side with <code className="text-amber-400">MODERATOR_PASSCODE</code>.</div>
         </div>
       </main>
     );
@@ -64,7 +72,7 @@ export default function ModeratorKanbanPage() {
             🟢 Moderator Online (ID: #MOD-07)
           </span>
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={handleLogout}
             className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold transition"
           >
             Sign Out

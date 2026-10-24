@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck -- Legacy prototype feed remains JavaScript-shaped; new server architecture is strictly typed.
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
@@ -6,7 +8,6 @@ import { mockSectionsData } from '@/data/mockNews';
 import { getAvailableCommunities } from '@/data/communities';
 import { getSession, getUserProfile } from '@/lib/profile';
 import { trackArticleFeedback } from '@/lib/userService';
-import CommentSections from '@/components/CommentSections';
 import CommentSheet from '@/components/CommentSheet';
 
 // ─── EXTRACTED CARD COMPONENT ───
@@ -282,6 +283,8 @@ export default function FeedPage() {
 
   const [loading, setLoading] = useState(false);
   const [articlesData, setArticlesData] = useState(mockSectionsData);
+  const [usingFixtureNews, setUsingFixtureNews] = useState(true);
+  const [backendCommunityFeeds, setBackendCommunityFeeds] = useState([]);
   const [userFeedback, setUserFeedback] = useState({});
 
   // Touch States
@@ -317,6 +320,53 @@ export default function FeedPage() {
   }, [router]);
 
   useEffect(() => {
+    if (!profileReady) return;
+    let cancelled = false;
+
+    const loadApprovedNews = async () => {
+      try {
+        const response = await fetch('/api/articles', { cache: 'no-store' });
+        if (!response.ok) return;
+        const approvedArticles = await response.json();
+        if (!cancelled && Array.isArray(approvedArticles) && approvedArticles.length > 0) {
+          setArticlesData((current) => ({ ...current, 'my-news': approvedArticles }));
+          setUsingFixtureNews(false);
+        }
+      } catch {
+        // Local development can still use the existing fixtures before the
+        // database and agent workflow have produced their first article.
+      }
+    };
+
+    void loadApprovedNews();
+    return () => { cancelled = true; };
+  }, [profileReady]);
+
+  useEffect(() => {
+    if (!profileReady || activeTab !== 'communities') return;
+    let cancelled = false;
+    const loadCommunityNews = async () => {
+      try {
+        const response = await fetch(`/api/articles?community=${encodeURIComponent(selectedCommunity)}`, { cache: 'no-store' });
+        if (!response.ok) return;
+        const approvedArticles = await response.json();
+        if (!cancelled && Array.isArray(approvedArticles) && approvedArticles.length > 0) {
+          setArticlesData((current) => ({
+            ...current,
+            communities: {
+              ...current.communities,
+              [selectedCommunity]: { ...(current.communities?.[selectedCommunity] || {}), verified: approvedArticles }
+            }
+          }));
+          setBackendCommunityFeeds((names) => names.includes(selectedCommunity) ? names : [...names, selectedCommunity]);
+        }
+      } catch { /* Keep the visibly labeled development fixture. */ }
+    };
+    void loadCommunityNews();
+    return () => { cancelled = true; };
+  }, [activeTab, profileReady, selectedCommunity]);
+
+  useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
       const activeBtn = communityButtonRefs.current[selectedCommunity];
       if (activeBtn) {
@@ -329,7 +379,7 @@ export default function FeedPage() {
     }
   }, [selectedCommunity]);
 
-  const handleCardSwipeOut = (itemId, direction) => {
+  const handleCardSwipeOut = (itemId) => {
     setArticlesData((prevData) => {
       const currentList = prevData[activeTab] || [];
       return {
@@ -339,15 +389,24 @@ export default function FeedPage() {
     });
   };
 
-  const handleCreatePublication = (e) => {
+  const handleCreatePublication = async (e) => {
     e.preventDefault();
     if (!newPubTitle.trim() || !newPubContent.trim()) {
       alert("Please fill in both title and content.");
       return;
     }
 
+    let persistedId = null;
+    try {
+      const response = await fetch('/api/submissions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newPubTitle, summary: newPubContent, content: newPubContent, community: newPubCommunity, category: 'Citizen Scoop' })
+      });
+      if (response.ok) persistedId = (await response.json()).id;
+    } catch { /* Keep the existing local prototype flow available offline. */ }
+
     const newArticle = {
-      id: `pub-${Date.now()}`,
+      id: persistedId || `fixture-pub-${Date.now()}`,
       category: 'My Story',
       community: newPubCommunity,
       title: newPubTitle,
@@ -524,6 +583,16 @@ export default function FeedPage() {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row overflow-hidden select-none relative"
     >
+      {usingFixtureNews && activeTab === 'my-news' && (
+        <div className="absolute top-1 right-2 z-40 rounded-full bg-slate-800/90 px-2 py-1 text-[9px] text-slate-400">
+          Development fixture feed
+        </div>
+      )}
+      {!backendCommunityFeeds.includes(selectedCommunity) && activeTab === 'communities' && (
+        <div className="absolute top-1 right-2 z-40 rounded-full bg-slate-800/90 px-2 py-1 text-[9px] text-slate-400">
+          Development fixture community feed
+        </div>
+      )}
       {/* DESKTOP SIDEBAR */}
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 border-r border-slate-800 p-5 h-screen justify-between shrink-0">
         <div>
