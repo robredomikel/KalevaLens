@@ -10,7 +10,8 @@ If target language is Finnish and practice mode is requested (e.g., 'simplified'
 export async function runTranslationAgent(
   draft: CanonicalArticleDraft,
   targetLanguage: string,
-  finnishPracticeMode?: "simplified" | "translation" | "original" | null
+  finnishPracticeMode?: "simplified" | "translation" | "original" | null,
+  languageLevel?: string
 ): Promise<ArticleTranslation> {
   const prompt = `
 Translate this article:
@@ -19,6 +20,7 @@ Summary Bullets: ${JSON.stringify(draft.summaryBullets)}
 Body: ${draft.body}
 
 Target Language: ${targetLanguage}
+${languageLevel ? `Language Level (CEFR): ${languageLevel}. Adapt sentence structure, vocabulary complexity, and grammar appropriate for CEFR level ${languageLevel} (A1=very simple phrases, A2=elementary, B1=intermediate, B2=upper intermediate, C1=advanced fluent).` : ""}
 ${targetLanguage === "fi" && finnishPracticeMode ? `Finnish Practice Mode: ${finnishPracticeMode} (use easy, accessible Finnish vocabulary and clear sentences for language learners)` : ""}
 
 Return structured translation adhering strictly to schema.

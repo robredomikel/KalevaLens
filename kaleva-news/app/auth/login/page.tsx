@@ -13,9 +13,12 @@ export default function LoginPage() {
       alert("Please fill in all fields.");
       return;
     }
-    // Mock customer login action
-    alert(`Welcome back, ${email}! Logging into Kaleva Lens...`);
-    window.location.href = '/';
+    // Set authenticated user context
+    const mockUserId = email === 'admin@kaleva.fi' ? 'admin' : '123';
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('kaleva_current_user', JSON.stringify({ userId: mockUserId, email }));
+    }
+    window.location.href = '/?signedIn=true';
   };
 
   return (

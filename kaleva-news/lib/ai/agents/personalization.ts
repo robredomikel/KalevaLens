@@ -3,8 +3,16 @@ import { generateAgentStructured } from "../generate";
 
 export interface UserPreferencesSummary {
   preferredLanguage?: string;
+  preferredLanguageLevel?: string;
+  finnishPracticeFrequency?: string;
+  finnishPracticeMode?: string | null;
+  userSituation?: string;
+  timeInFinland?: string;
+  finnishSocietyFamiliarity?: string;
   topicInterests?: string[];
   newsGoals?: string[];
+  contextLevel?: string;
+  discoveryOpenness?: number;
   communityId?: string | null;
   subscribedCommunities?: string[];
 }

@@ -26,10 +26,11 @@ export default function SignupPage() {
     }
     setSaving(true);
     try {
-      // Authentication is mocked in this demo, so the preferences use the same demo user as the feed.
-      await savePreferences('123', preferences);
-      alert(`Account created successfully for ${name} (@${community})!`);
-      window.location.href = '/';
+      const mockUserId = '123';
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('kaleva_current_user', JSON.stringify({ userId: mockUserId, email, name, community }));
+      }
+      window.location.href = '/?signedIn=true&newAccount=true';
     } catch (error) {
       alert(error?.message || 'Could not create the account.');
       setSaving(false);

@@ -209,10 +209,40 @@ export async function ensureDatabaseSchema() {
         "articleLanguage" TEXT NOT NULL DEFAULT 'en',
         "articleLength" TEXT NOT NULL DEFAULT 'standard',
         "audioDurationSeconds" INT NOT NULL DEFAULT 30,
+        "preferredLanguage" TEXT DEFAULT 'en',
+        "preferredLanguageLevel" TEXT DEFAULT 'B2',
+        "customLanguage" TEXT DEFAULT '',
+        "finnishPracticeFrequency" TEXT DEFAULT 'none',
+        "finnishPracticeMode" TEXT,
+        "userSituation" TEXT DEFAULT 'Working professional',
+        "timeInFinland" TEXT DEFAULT '6 months – 2 years',
+        "finnishSocietyFamiliarity" TEXT DEFAULT 'basic',
+        "topicInterests" JSONB DEFAULT '[]'::jsonb,
+        "newsGoals" JSONB DEFAULT '[]'::jsonb,
+        "contextLevel" TEXT DEFAULT 'balanced',
+        "discoveryOpenness" INT DEFAULT 50,
+        "onboardingCompleted" BOOLEAN DEFAULT false,
+        "onboardingCompletedAt" TIMESTAMP WITH TIME ZONE,
         "createdAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `;
+
+    // Ensure columns for existing DB instances
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "preferredLanguage" TEXT DEFAULT 'en';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "preferredLanguageLevel" TEXT DEFAULT 'B2';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "customLanguage" TEXT DEFAULT '';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "finnishPracticeFrequency" TEXT DEFAULT 'none';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "finnishPracticeMode" TEXT;`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "userSituation" TEXT DEFAULT 'Working professional';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "timeInFinland" TEXT DEFAULT '6 months – 2 years';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "finnishSocietyFamiliarity" TEXT DEFAULT 'basic';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "topicInterests" JSONB DEFAULT '[]'::jsonb;`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "newsGoals" JSONB DEFAULT '[]'::jsonb;`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "contextLevel" TEXT DEFAULT 'balanced';`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "discoveryOpenness" INT DEFAULT 50;`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "onboardingCompleted" BOOLEAN DEFAULT false;`;
+    await sql`ALTER TABLE "UserPreference" ADD COLUMN IF NOT EXISTS "onboardingCompletedAt" TIMESTAMP WITH TIME ZONE;`;
     await sql`
       CREATE TABLE IF NOT EXISTS "ArticlePreferenceVariant" (
         id TEXT PRIMARY KEY, "articleId" TEXT NOT NULL, "articleVersion" TEXT NOT NULL,

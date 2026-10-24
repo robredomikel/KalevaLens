@@ -8,19 +8,83 @@ import { DEFAULT_PREFERENCES, normalizePreferences, UserPreferences } from "./co
 export async function getUserPreferences(userId?: string | null): Promise<UserPreferences> {
   if (!userId) return DEFAULT_PREFERENCES;
   await ensureDatabaseSchema();
-  const rows = await sql`SELECT "audioLanguage", "articleLanguage", "articleLength" FROM "UserPreference" WHERE "userId"=${userId} LIMIT 1;`;
-  return normalizePreferences(rows[0] || {});
+  try {
+    const rows = await sql`
+      SELECT 
+        "audioLanguage", "articleLanguage", "articleLength",
+        "preferredLanguage", "preferredLanguageLevel", "customLanguage",
+        "finnishPracticeFrequency", "finnishPracticeMode",
+        "userSituation", "timeInFinland", "finnishSocietyFamiliarity",
+        "topicInterests", "newsGoals", "contextLevel", "discoveryOpenness",
+        "onboardingCompleted", "onboardingCompletedAt"
+      FROM "UserPreference" 
+      WHERE "userId"=${userId} 
+      LIMIT 1;
+    `;
+    if (!rows.length) return DEFAULT_PREFERENCES;
+    return normalizePreferences(rows[0]);
+  } catch (err) {
+    console.error("Error loading user preferences:", err);
+    return DEFAULT_PREFERENCES;
+  }
 }
 
 export async function persistUserPreferences(userId: string, input: Partial<UserPreferences>) {
   await ensureDatabaseSchema();
   const preferences = normalizePreferences(input);
+  const topicInterestsJson = JSON.stringify(preferences.topicInterests || []);
+  const newsGoalsJson = JSON.stringify(preferences.newsGoals || []);
+  const completedAt = preferences.onboardingCompleted ? (preferences.onboardingCompletedAt || new Date().toISOString()) : null;
+
   await sql`
-    INSERT INTO "UserPreference" ("userId", "audioLanguage", "articleLanguage", "articleLength")
-    VALUES (${userId}, ${preferences.audioLanguage}, ${preferences.articleLanguage}, ${preferences.articleLength})
-    ON CONFLICT ("userId") DO UPDATE SET "audioLanguage"=EXCLUDED."audioLanguage", "articleLanguage"=EXCLUDED."articleLanguage", "articleLength"=EXCLUDED."articleLength", "updatedAt"=CURRENT_TIMESTAMP;
+    INSERT INTO "UserPreference" (
+      "userId", "audioLanguage", "articleLanguage", "articleLength",
+      "preferredLanguage", "preferredLanguageLevel", "customLanguage",
+      "finnishPracticeFrequency", "finnishPracticeMode",
+      "userSituation", "timeInFinland", "finnishSocietyFamiliarity",
+      "topicInterests", "newsGoals", "contextLevel", "discoveryOpenness",
+      "onboardingCompleted", "onboardingCompletedAt"
+    )
+    VALUES (
+      ${userId}, ${preferences.audioLanguage}, ${preferences.articleLanguage}, ${preferences.articleLength},
+      ${preferences.preferredLanguage}, ${preferences.preferredLanguageLevel}, ${preferences.customLanguage || ''},
+      ${preferences.finnishPracticeFrequency}, ${preferences.finnishPracticeMode},
+      ${preferences.userSituation}, ${preferences.timeInFinland}, ${preferences.finnishSocietyFamiliarity},
+      ${topicInterestsJson}::jsonb, ${newsGoalsJson}::jsonb, ${preferences.contextLevel}, ${preferences.discoveryOpenness},
+      ${preferences.onboardingCompleted}, ${completedAt}
+    )
+    ON CONFLICT ("userId") DO UPDATE SET
+      "audioLanguage"=EXCLUDED."audioLanguage",
+      "articleLanguage"=EXCLUDED."articleLanguage",
+      "articleLength"=EXCLUDED."articleLength",
+      "preferredLanguage"=EXCLUDED."preferredLanguage",
+      "preferredLanguageLevel"=EXCLUDED."preferredLanguageLevel",
+      "customLanguage"=EXCLUDED."customLanguage",
+      "finnishPracticeFrequency"=EXCLUDED."finnishPracticeFrequency",
+      "finnishPracticeMode"=EXCLUDED."finnishPracticeMode",
+      "userSituation"=EXCLUDED."userSituation",
+      "timeInFinland"=EXCLUDED."timeInFinland",
+      "finnishSocietyFamiliarity"=EXCLUDED."finnishSocietyFamiliarity",
+      "topicInterests"=EXCLUDED."topicInterests",
+      "newsGoals"=EXCLUDED."newsGoals",
+      "contextLevel"=EXCLUDED."contextLevel",
+      "discoveryOpenness"=EXCLUDED."discoveryOpenness",
+      "onboardingCompleted"=EXCLUDED."onboardingCompleted",
+      "onboardingCompletedAt"=EXCLUDED."onboardingCompletedAt",
+      "updatedAt"=CURRENT_TIMESTAMP;
   `;
   return preferences;
+}
+
+export async function hasCompletedOnboarding(userId: string): Promise<boolean> {
+  if (!userId) return false;
+  await ensureDatabaseSchema();
+  try {
+    const rows = await sql`SELECT "onboardingCompleted" FROM "UserPreference" WHERE "userId"=${userId} LIMIT 1;`;
+    return Boolean(rows[0]?.onboardingCompleted);
+  } catch {
+    return false;
+  }
 }
 
 export async function enqueuePreferredArticles(language: string, length: string, priority = 20) {

@@ -21,6 +21,8 @@ import {
 } from '@/app/actions/subscriptions';
 import ArticleMediaControls from '@/components/ArticleMediaControls';
 import PreferencesModal from '@/components/PreferencesModal';
+import OnboardingWizard from '@/components/OnboardingWizard';
+import { checkOnboardingStatus } from '@/app/actions/preferences';
 
 const CURRENT_USER_ID = "123";
 
@@ -315,6 +317,7 @@ export default function FeedPage() {
   
   const [isManagingCommunities, setIsManagingCommunities] = useState(false);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [preferenceRevision, setPreferenceRevision] = useState(0);
   const [isWaitingForPreferences, setIsWaitingForPreferences] = useState(false);
   const [communitySearchQuery, setCommunitySearchQuery] = useState('');
@@ -353,6 +356,17 @@ export default function FeedPage() {
   const containerRef = useRef(null);
   const communityButtonRefs = useRef({});
   const subscribedCommunitiesKey = Array.isArray(subscribedCommunities) ? subscribedCommunities.join(',') : '';
+
+  // Check if first-time user onboarding needs to run
+  useEffect(() => {
+    async function verifyOnboarding() {
+      const completed = await checkOnboardingStatus(CURRENT_USER_ID);
+      if (!completed) {
+        setIsOnboardingOpen(true);
+      }
+    }
+    verifyOnboarding();
+  }, []);
 
   // Fetch all communities & user's database active subscriptions on mount
   useEffect(() => {
@@ -883,6 +897,18 @@ export default function FeedPage() {
         </nav>
 
         <PreferencesModal userId={CURRENT_USER_ID} open={isPreferencesOpen} onClose={() => setIsPreferencesOpen(false)} onSaved={() => { setPreferenceRevision((value) => value + 1); setIsWaitingForPreferences(true); }} />
+
+        {isOnboardingOpen && (
+          <OnboardingWizard
+            userId={CURRENT_USER_ID}
+            onCancel={() => setIsOnboardingOpen(false)}
+            onComplete={() => {
+              setIsOnboardingOpen(false);
+              setPreferenceRevision((value) => value + 1);
+              handleRefreshFeed();
+            }}
+          />
+        )}
 
         {/* MANAGE COMMUNITIES MODAL */}
         {isManagingCommunities && (

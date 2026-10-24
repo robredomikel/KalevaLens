@@ -1,10 +1,15 @@
 'use server';
 
-import { getUserPreferences, persistUserPreferences, enqueuePreferredArticles } from '@/lib/preferences/service';
+import { getUserPreferences, persistUserPreferences, enqueuePreferredArticles, hasCompletedOnboarding } from '@/lib/preferences/service';
 import { enqueueArticleMedia } from '@/lib/media/repository';
 
 export async function loadPreferences(userId) {
   return getUserPreferences(userId);
+}
+
+export async function checkOnboardingStatus(userId) {
+  if (!userId) return false;
+  return hasCompletedOnboarding(userId);
 }
 
 export async function savePreferences(userId, input) {
