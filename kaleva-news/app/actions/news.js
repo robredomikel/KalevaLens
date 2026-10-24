@@ -313,6 +313,21 @@ export async function getArticleById(articleId) {
 }
 
 /**
+ * Queries updated media status for a specific article.
+ */
+export async function getArticleMediaStatus(articleId, canonicalId, language = 'en') {
+  if (!articleId && !canonicalId) return {};
+  try {
+    const dummyArticle = { id: articleId, canonicalId: canonicalId || articleId };
+    const attached = await attachMedia([dummyArticle], language);
+    return attached[0]?.media || {};
+  } catch (err) {
+    console.error('Error checking media status:', err);
+    return {};
+  }
+}
+
+/**
  * Marks a story as read.
  */
 export async function markStoryAsRead(userId, storyId) {

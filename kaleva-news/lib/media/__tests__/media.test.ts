@@ -3,6 +3,7 @@ import { articleVersion, canonicalArticleId, normalizeUrl } from "../identity";
 import { runMediaQualityAgent } from "@/lib/ai/agents/mediaQuality";
 import { pcmToMp3 } from "../ffmpeg";
 import { runNewsNarrationAgent } from "@/lib/ai/agents/newsNarration";
+import { attachMedia, syncExistingFilesystemMedia } from "../repository";
 import { readFile } from "node:fs/promises";
 
 describe("article media identity", () => {
@@ -52,4 +53,21 @@ describe("deterministic media QA", () => {
     expect(audio.length).toBeGreaterThan(100);
     expect((await runMediaQualityAgent({ buffer: audio, mimeType: "audio/mpeg", extension: "mp3", durationSeconds: 1, method: "test" }, "audio")).passed).toBe(true);
   }, 15000);
+});
+
+describe("media reconciliation and attachment", () => {
+  it("reconciles filesystem MP3 files and attaches ready media to articles", async () => {
+    const count = await syncExistingFilesystemMedia();
+    expect(typeof count).toBe("number");
+
+    const articles = [
+      { id: "3f6e76d7-06c4-47a1-8fc3-348f6b4819aa", canonicalId: "internal:3f6e76d7-06c4-47a1-8fc3-348f6b4819aa", title: "Test Article" }
+    ];
+
+    const attached = (await attachMedia(articles, "en")) as Array<{ id: string; media?: any }>;
+    expect(attached[0].media).toBeDefined();
+    if (attached[0].media?.audio?.status === "ready") {
+      expect(attached[0].media.audio.url).toMatch(/^\/generated-media\/.+\.mp3$/);
+    }
+  }, 20000);
 });

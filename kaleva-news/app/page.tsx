@@ -258,7 +258,7 @@ function NewsCard({
       </div>
 
       <div className="pt-3 border-t border-slate-800 flex items-center justify-between shrink-0">
-        <ArticleMediaControls title={item.title} media={item.media} />
+        <ArticleMediaControls articleId={item.id} canonicalId={item.canonicalId} title={item.title} media={item.media} />
 
         {activeTab === 'communities' ? (
           <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
