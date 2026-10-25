@@ -1,8 +1,9 @@
 // @ts-nocheck -- legacy JSX page is incrementally typed.
 'use client';
+
 import { useState } from 'react';
 import Link from 'next/link';
-import { savePreferences } from '@/app/actions/preferences';
+import { registerUser } from '@/app/actions/auth';
 import { ARTICLE_LENGTHS, DEFAULT_PREFERENCES, SUPPORTED_LANGUAGES } from '@/lib/preferences/config';
 
 export default function SignupPage() {
@@ -24,15 +25,34 @@ export default function SignupPage() {
       alert("Please complete all fields.");
       return;
     }
+    
     setSaving(true);
+    
     try {
-      const mockUserId = '123';
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('kaleva_current_user', JSON.stringify({ userId: mockUserId, email, name, community }));
+      const response = await registerUser({
+        name,
+        email,
+        password,
+        community,
+        preferences
+      });
+
+      if (response.success) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('kaleva_current_user', JSON.stringify({
+            userId: response.user.id,
+            email: response.user.email,
+            name: response.user.name,
+            community: response.user.community
+          }));
+        }
+        window.location.href = '/?signedIn=true&newAccount=true';
+      } else {
+        alert(response.error);
+        setSaving(false);
       }
-      window.location.href = '/?signedIn=true&newAccount=true';
     } catch (error) {
-      alert(error?.message || 'Could not create the account.');
+      alert('Could not create the account. Please try again.');
       setSaving(false);
     }
   };
@@ -112,7 +132,8 @@ export default function SignupPage() {
 
           <button 
             type="submit"
-            className="w-full bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg mt-2"
+            disabled={saving}
+            className="w-full bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg mt-2 disabled:opacity-50"
           >
             {saving ? 'Creating account…' : 'Create Account ✨'}
           </button>

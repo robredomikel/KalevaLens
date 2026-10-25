@@ -1,51 +1,48 @@
 // @ts-nocheck -- legacy JSX page is incrementally typed.
+/* eslint-disable @next/next/no-img-element */
 'use client';
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import KanbanBoard from '@/components/moderator/KanbanBoard';
 
 export default function ModeratorKanbanPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passcode, setPasscode] = useState('');
+  const router = useRouter();
+  const [moderatorUser, setModeratorUser] = useState(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (passcode === 'kaleva2026' || passcode === 'mod') {
-      setIsAuthenticated(true);
-    } else {
-      alert("Invalid moderator passcode. Try 'kaleva2026'");
+  // Authenticate and verify moderator role on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedUser = localStorage.getItem('kaleva_current_user');
+      if (!storedUser) {
+        router.push('/auth/login');
+        return;
+      }
+      
+      const user = JSON.parse(storedUser);
+      if (user.role !== 'MODERATOR') {
+        alert('Unauthorized access. This area is restricted to moderators.');
+        router.push('/');
+        return;
+      }
+
+      setModeratorUser(user);
+      setIsCheckingAuth(false);
     }
+  }, [router]);
+
+  const handleSignOut = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('kaleva_current_user');
+    }
+    router.push('/auth/login');
   };
 
-  if (!isAuthenticated) {
+  if (isCheckingAuth) {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl w-full max-w-md">
-          <h1 className="text-xl font-black text-amber-400 mb-2">KALEVA MODERATOR PORTAL</h1>
-          <p className="text-xs text-slate-400 mb-6">Enter your authorized moderator credentials to access the manual Kanban workflow.</p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">Moderator Passcode</label>
-              <input 
-                type="password"
-                placeholder="Enter passcode (e.g. kaleva2026)"
-                value={passcode}
-                onChange={(e) => setPasscode(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-400"
-                required
-              />
-            </div>
-            <button 
-              type="submit"
-              className="w-full bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg"
-            >
-              Access Kanban Dashboard 🔐
-            </button>
-          </form>
-          <div className="mt-4 text-[10px] text-slate-500 text-center">
-            Hint for hackathon demo: Passcode is <code className="text-amber-400">kaleva2026</code>
-          </div>
-        </div>
+      <main className="min-h-screen bg-slate-950 text-amber-400 flex items-center justify-center text-xs tracking-widest uppercase animate-pulse">
+        Verifying moderator credentials...
       </main>
     );
   }
@@ -58,15 +55,18 @@ export default function ModeratorKanbanPage() {
           <h1 className="text-base font-black tracking-wider text-amber-400">
             KALEVA <span className="text-white text-xs font-normal">MODERATOR KANBAN WORKFLOW</span>
           </h1>
-          <p className="text-[11px] text-slate-400">Manual review pipeline for citizen news and community stories.</p>
+          <p className="text-[11px] text-slate-400">
+            Logged in as <strong className="text-white">{moderatorUser?.name}</strong> • Manual review pipeline for citizen news.
+          </p>
         </div>
+        
         <div className="flex items-center space-x-3">
           <span className="text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-2.5 py-1 rounded-full font-bold">
-            🟢 Moderator Online (ID: #MOD-07)
+            🟢 Moderator Online
           </span>
           <button 
-            onClick={() => setIsAuthenticated(false)}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold transition"
+            onClick={handleSignOut}
+            className="bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 px-3 py-1.5 rounded-xl text-xs font-bold transition"
           >
             Sign Out
           </button>

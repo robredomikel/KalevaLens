@@ -3,12 +3,14 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { mockSectionsData } from '@/data/mockNews';
 import { trackArticleFeedback } from '@/lib/userService';
 import CommentSheet from '@/components/CommentSheet';
 import { markStoryAsRead } from '@/app/actions/news';
 import { getPersonalizedFeed } from '@/app/actions/personalizedNews';
 import { getBlendedOutsidePriorityFeed } from '@/app/actions/blendedNews';
+import { injectAdsIntoFeed } from '@/lib/ads';
 import { 
   getCommunitiesList, 
   getCommunityFeed, 
@@ -28,8 +30,7 @@ import PreferencesModal from '@/components/PreferencesModal';
 import OnboardingWizard from '@/components/OnboardingWizard';
 import { checkOnboardingStatus } from '@/app/actions/preferences';
 
-const CURRENT_USER_ID = "123";
-
+// ─── EXTRACTED CARD COMPONENT ───
 // ─── EXTRACTED CARD COMPONENT ───
 function NewsCard({ 
   item, 
@@ -42,6 +43,40 @@ function NewsCard({
   onSheetToggle,
   onVerifySuccess 
 }) {
+  // ─── FULL-BLEED AD TILE (ZERO WHITESPACE / MATCHING CARD HEIGHT) ───
+  if (item.isAd) {
+    return (
+      <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col justify-between h-full snap-start relative overflow-hidden">
+        
+        {/* Top Header Tag */}
+        <div className="flex justify-between items-center mb-3 shrink-0">
+          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest bg-amber-400/10 px-2.5 py-1 rounded-md">
+            Sponsored
+          </span>
+        </div>
+
+        {/* Dynamic Image Container (Fills the exact space where article summary goes) */}
+        <div className="relative w-full flex-1 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 my-2 min-h-[380px] sm:min-h-[420px]">
+          <img 
+            src={item.imageUrl} 
+            alt={item.title || 'Advertisement'} 
+            style={{ objectFit: 'fill', width: '100%', height: '100%', position: 'absolute', inset: 0 }}
+            className="hover:scale-105 transition duration-300"
+          />
+        </div>
+
+        {/* Clean CTA Button aligned at the bottom */}
+        <button 
+          onClick={() => alert(`Redirecting to sponsor offer: ${item.title}`)}
+          className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold py-3 rounded-xl text-xs sm:text-sm transition shadow-lg tracking-wide flex items-center justify-center space-x-2 mt-3 shrink-0"
+        >
+          <span>{item.cta || 'Learn More'}</span>
+          <span>→</span>
+        </button>
+      </div>
+    );
+  }
+
   const feedback = userFeedback[item.id];
   const isSwipeableSection = activeTab === 'my-news' || activeTab === 'outside';
 
@@ -62,7 +97,6 @@ function NewsCard({
 
   const handlePointerDown = (e) => {
     if (!isSwipeableSection || isSheetOpen) return;
-    // Do not trigger swipe dragging if user is clicking/interacting with a button, link, audio, or input
     const targetEl = e.target;
     if (
       targetEl.closest('button') || 
@@ -89,12 +123,10 @@ function NewsCard({
     const diffX = currentX - touchStartXRef.current;
     const diffY = currentY - touchStartYRef.current;
 
-    // Detect direction on initial movement threshold (10px)
     if (!isHorizontalSwipeRef.current) {
       if (Math.abs(diffX) > 10 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
         isHorizontalSwipeRef.current = true;
       } else if (Math.abs(diffY) > 10 && Math.abs(diffY) > Math.abs(diffX)) {
-        // Vertical gesture taking precedence - cancel horizontal drag
         isGestureActiveRef.current = false;
         setIsDragging(false);
         setDragOffset({ x: 0, rot: 0 });
@@ -308,10 +340,14 @@ function NewsCard({
   );
 }
 
+
 // ─── MAIN FEED PAGE ───
 export default function FeedPage() {
-  const [activeTab, setActiveTab] = useState('my-news');
+  const router = useRouter();
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
+  const [activeTab, setActiveTab] = useState('my-news');
   const [allAvailableCommunities, setAllAvailableCommunities] = useState([
     'Indian', 'Spanish', 'Food', 'PhD Researcher in Oulu', 'Tech Jobs'
   ]);
@@ -362,19 +398,41 @@ export default function FeedPage() {
   const communityButtonRefs = useRef({});
   const subscribedCommunitiesKey = Array.isArray(subscribedCommunities) ? subscribedCommunities.join(',') : '';
 
+  // Auth Protection & Moderator Routing Guard on Mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedUser = localStorage.getItem('kaleva_current_user');
+      if (!storedUser) {
+        router.push('/auth/login');
+      } else {
+        const user = JSON.parse(storedUser);
+        
+        if (user.role === 'MODERATOR') {
+          router.push('/moderator/kanban');
+          return;
+        }
+
+        setCurrentUserId(user.userId);
+        setIsCheckingAuth(false);
+      }
+    }
+  }, [router]);
+
   // Check if first-time user onboarding needs to run
   useEffect(() => {
+    if (!currentUserId) return;
     async function verifyOnboarding() {
-      const completed = await checkOnboardingStatus(CURRENT_USER_ID);
+      const completed = await checkOnboardingStatus(currentUserId);
       if (!completed) {
         setIsOnboardingOpen(true);
       }
     }
     verifyOnboarding();
-  }, []);
+  }, [currentUserId]);
 
   // Fetch all communities & user's database active subscriptions on mount
   useEffect(() => {
+    if (!currentUserId) return;
     async function initCommunities() {
       const list = await getCommunitiesList();
       if (list.length > 0) {
@@ -382,8 +440,7 @@ export default function FeedPage() {
         setAllAvailableCommunities(names);
       }
 
-      // Fetch ONLY communities this user is actively subscribed to from db (isActive = TRUE)
-      const userSubs = await getUserSubscribedCommunities(CURRENT_USER_ID);
+      const userSubs = await getUserSubscribedCommunities(currentUserId);
       if (userSubs.length > 0) {
         const subNames = userSubs.map(s => s.name);
         setSubscribedCommunities(subNames);
@@ -394,48 +451,50 @@ export default function FeedPage() {
       }
     }
     initCommunities();
-  }, []);
+  }, [currentUserId]);
 
   // Fetch feed whenever activeTab, selectedCommunity, or communitySubTab changes
   useEffect(() => {
+    if (!currentUserId) return;
     async function loadFeedData() {
       if (activeTab === 'communities' && selectedCommunity) {
         setLoading(true);
         const isVerified = communitySubTab === 'verified';
         const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
-        setCommunityArticles(stories);
+        setCommunityArticles(injectAdsIntoFeed(stories));
         setLoading(false);
       } else if (activeTab === 'published') {
         setLoading(true);
-        const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
+        const userStories = await getPublishedStoriesByUser(currentUserId);
         setArticlesData(prev => ({
           ...prev,
-          published: userStories
+          published: injectAdsIntoFeed(userStories)
         }));
         setLoading(false);
       }
     }
     loadFeedData();
-  }, [activeTab, selectedCommunity, communitySubTab]);
+  }, [activeTab, selectedCommunity, communitySubTab, currentUserId]);
 
   // Load feeds dynamically when switching tabs, changing subscriptions, or updating preferences
   useEffect(() => {
+    if (!currentUserId) return;
     async function loadFeeds() {
       if (activeTab === 'published' || activeTab === 'communities') return;
       setLoading(true);
       if (activeTab === 'my-news') {
-        const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
+        const stories = await getPersonalizedFeed(currentUserId, subscribedCommunities, 10, 0);
         setArticlesData(prev => ({
           ...prev,
-          'my-news': stories
+          'my-news': injectAdsIntoFeed(stories)
         }));
         setPageOffset(0);
         setHasMore(true);
       } else if (activeTab === 'outside') {
-        const blendedStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
+        const blendedStories = await getBlendedOutsidePriorityFeed(currentUserId, 10, 0);
         setArticlesData(prev => ({
           ...prev,
-          outside: blendedStories
+          outside: injectAdsIntoFeed(blendedStories)
         }));
         setOutsideOffset(0);
         setHasMoreOutside(true);
@@ -443,23 +502,22 @@ export default function FeedPage() {
       setLoading(false);
     }
     loadFeeds();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, subscribedCommunitiesKey, preferenceRevision]);
+  }, [activeTab, subscribedCommunitiesKey, preferenceRevision, currentUserId]);
 
   // Infinite scroll loader for 'My News'
   const loadMoreArticles = async () => {
-    if (isLoadingMore || !hasMore) return;
+    if (isLoadingMore || !hasMore || !currentUserId) return;
     setIsLoadingMore(true);
 
     const nextOffset = pageOffset + 10;
-    const moreStories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, nextOffset);
+    const moreStories = await getPersonalizedFeed(currentUserId, subscribedCommunities, 10, nextOffset);
 
     if (moreStories.length === 0) {
       setHasMore(false);
     } else {
       setArticlesData(prev => ({
         ...prev,
-        'my-news': [...(prev['my-news'] || []), ...moreStories]
+        'my-news': injectAdsIntoFeed([...(prev['my-news'] || []), ...moreStories])
       }));
       setPageOffset(nextOffset);
     }
@@ -468,18 +526,18 @@ export default function FeedPage() {
 
   // Infinite scroll loader for 'Outside Sources'
   const loadMoreOutsideArticles = async () => {
-    if (isLoadingMoreOutside || !hasMoreOutside) return;
+    if (isLoadingMoreOutside || !hasMoreOutside || !currentUserId) return;
     setIsLoadingMoreOutside(true);
 
     const nextOffset = outsideOffset + 10;
-    const moreStories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, nextOffset);
+    const moreStories = await getBlendedOutsidePriorityFeed(currentUserId, nextOffset);
 
     if (moreStories.length === 0) {
       setHasMoreOutside(false);
     } else {
       setArticlesData(prev => ({
         ...prev,
-        outside: [...(prev.outside || []), ...moreStories]
+        outside: injectAdsIntoFeed([...(prev.outside || []), ...moreStories])
       }));
       setOutsideOffset(nextOffset);
     }
@@ -514,7 +572,7 @@ export default function FeedPage() {
   }, [selectedCommunity]);
 
   const handleCardSwipeOut = (itemId) => {
-    markStoryAsRead(CURRENT_USER_ID, itemId);
+    if (currentUserId) markStoryAsRead(currentUserId, itemId);
 
     setArticlesData((prevData) => {
       const currentList = prevData[activeTab] || [];
@@ -527,13 +585,13 @@ export default function FeedPage() {
 
   const handleCreatePublication = async (e) => {
     e.preventDefault();
-    if (!newPubTitle.trim() || !newPubContent.trim()) {
+    if (!newPubTitle.trim() || !newPubContent.trim() || !currentUserId) {
       alert("Please fill in both title and content.");
       return;
     }
 
     const response = await createPublishedStory({
-      userId: CURRENT_USER_ID,
+      userId: currentUserId,
       title: newPubTitle,
       summary: newPubContent,
       content: newPubContent,
@@ -547,9 +605,8 @@ export default function FeedPage() {
       setNewPubContent('');
       setIsCreatingPublication(false);
       
-      // Refresh published list
-      const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
-      setArticlesData(prev => ({ ...prev, published: userStories }));
+      const userStories = await getPublishedStoriesByUser(currentUserId);
+      setArticlesData(prev => ({ ...prev, published: injectAdsIntoFeed(userStories) }));
       setActiveTab('published');
     } else {
       alert(`Error creating publication: ${response.error}`);
@@ -560,8 +617,8 @@ export default function FeedPage() {
     setCommunityArticles(prev => prev.filter(story => story.id !== verifiedStoryId));
   };
   
-  // Handle Database Subscription / Unsubscription toggle
   const toggleCommunitySubscription = async (commName) => {
+    if (!currentUserId) return;
     const isCurrentlySubscribed = subscribedCommunities.includes(commName);
 
     if (isCurrentlySubscribed) {
@@ -569,8 +626,7 @@ export default function FeedPage() {
         alert("You must be subscribed to at least one community.");
         return;
       }
-      // Unsubscribe in database (sets isActive = false)
-      const res = await toggleUserSubscription(CURRENT_USER_ID, commName, false);
+      const res = await toggleUserSubscription(currentUserId, commName, false);
       if (res.success) {
         const updated = subscribedCommunities.filter(c => c !== commName);
         setSubscribedCommunities(updated);
@@ -581,8 +637,7 @@ export default function FeedPage() {
         alert(`Error unsubscribing: ${res.error}`);
       }
     } else {
-      // Subscribe in database (sets isActive = true)
-      const res = await toggleUserSubscription(CURRENT_USER_ID, commName, true);
+      const res = await toggleUserSubscription(currentUserId, commName, true);
       if (res.success) {
         const updated = [...subscribedCommunities, commName];
         setSubscribedCommunities(updated);
@@ -596,22 +651,23 @@ export default function FeedPage() {
   };
 
   const handleRefreshFeed = async () => {
+    if (!currentUserId) return;
     setIsRefreshing(true);
     setLoading(true);
 
     if (activeTab === 'communities') {
       const isVerified = communitySubTab === 'verified';
       const stories = await getCommunityFeed(selectedCommunity, isVerified, 10, 0);
-      setCommunityArticles(stories);
+      setCommunityArticles(injectAdsIntoFeed(stories));
     } else if (activeTab === 'published') {
-      const userStories = await getPublishedStoriesByUser(CURRENT_USER_ID);
-      setArticlesData(prev => ({ ...prev, published: userStories }));
+      const userStories = await getPublishedStoriesByUser(currentUserId);
+      setArticlesData(prev => ({ ...prev, published: injectAdsIntoFeed(userStories) }));
     } else if (activeTab === 'my-news') {
-      const stories = await getPersonalizedFeed(CURRENT_USER_ID, subscribedCommunities, 10, 0);
-      setArticlesData(prev => ({ ...prev, 'my-news': stories }));
+      const stories = await getPersonalizedFeed(currentUserId, subscribedCommunities, 10, 0);
+      setArticlesData(prev => ({ ...prev, 'my-news': injectAdsIntoFeed(stories) }));
     } else if (activeTab === 'outside') {
-      const stories = await getBlendedOutsidePriorityFeed(CURRENT_USER_ID, 10, 0);
-      setArticlesData(prev => ({ ...prev, outside: stories }));
+      const stories = await getBlendedOutsidePriorityFeed(currentUserId, 10, 0);
+      setArticlesData(prev => ({ ...prev, outside: injectAdsIntoFeed(stories) }));
     }
 
     setLoading(false);
@@ -705,6 +761,14 @@ export default function FeedPage() {
   const filteredCommunitiesForManagement = allAvailableCommunities.filter(c => 
     c.toLowerCase().includes(communitySearchQuery.toLowerCase())
   );
+
+  if (isCheckingAuth) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-amber-400 flex items-center justify-center text-xs tracking-widest uppercase animate-pulse">
+        Verifying session...
+      </main>
+    );
+  }
 
   return (
     <main
@@ -914,16 +978,17 @@ export default function FeedPage() {
             <span className="text-base">✍️</span>
             <span className="text-[10px] mt-0.5">Published</span>
           </button>
+          
           <button onClick={() => setIsPreferencesOpen(true)} className="flex flex-col items-center flex-1 py-1 text-slate-400 hover:text-white transition">
-            <span className="text-base">⚙️</span><span className="text-[10px] mt-0.5">Preferences</span>
+            <span className="text-base">⚙️</span><span className="text-[10px] mt-0.5">Prefs</span>
           </button>
         </nav>
 
-        <PreferencesModal userId={CURRENT_USER_ID} open={isPreferencesOpen} onClose={() => setIsPreferencesOpen(false)} onSaved={() => { setPreferenceRevision((value) => value + 1); setIsWaitingForPreferences(true); }} />
+        <PreferencesModal userId={currentUserId} open={isPreferencesOpen} onClose={() => setIsPreferencesOpen(false)} onSaved={() => { setPreferenceRevision((value) => value + 1); setIsWaitingForPreferences(true); }} />
 
         {isOnboardingOpen && (
           <OnboardingWizard
-            userId={CURRENT_USER_ID}
+            userId={currentUserId}
             onCancel={() => setIsOnboardingOpen(false)}
             onComplete={() => {
               setIsOnboardingOpen(false);
