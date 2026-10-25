@@ -30,32 +30,50 @@ export async function getCommunitiesList() {
 }
 
 /**
- * Fetches stories for a specific community, split by verified (PUBLISHED) vs unverified (PENDING)
+ * Fetches stories for a specific community, split by verified (VERIFIED) vs unverified (PENDING, IN_PROGRESS, REJECTED)
  */
 export async function getCommunityFeed(communityName, isVerified = true, limit = 10, offset = 0) {
   await fetchAndAutoPublishAllRSS();
 
   const parsedLimit = parseInt(limit, 10) || 10;
   const parsedOffset = parseInt(offset, 10) || 0;
-  // verified = PUBLISHED, unverified = PENDING
-  const targetStage = isVerified ? 'PUBLISHED' : 'PENDING';
 
   try {
-    const feed = await sql`
-      WITH RankedStories AS (
-        SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
-          CASE 
-            WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${CURRENT_USER_ID}) THEN 2 
-            ELSE 1 
-          END as read_priority
-        FROM "StorySubmission" s
-        WHERE s.community = ${communityName} AND s.stage = ${targetStage}
-      )
-      SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
-      FROM RankedStories
-      ORDER BY read_priority ASC, "createdAt" DESC
-      LIMIT ${parsedLimit} OFFSET ${parsedOffset};
-    `;
+    let feed;
+    if (isVerified) {
+      feed = await sql`
+        WITH RankedStories AS (
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
+            CASE 
+              WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${CURRENT_USER_ID}) THEN 2 
+              ELSE 1 
+            END as read_priority
+          FROM "StorySubmission" s
+          WHERE s.community = ${communityName} AND s.stage = 'VERIFIED'
+        )
+        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
+        FROM RankedStories
+        ORDER BY read_priority ASC, "createdAt" DESC
+        LIMIT ${parsedLimit} OFFSET ${parsedOffset};
+      `;
+    } else {
+      // Unverified tab includes all stories pending review, in progress, or rejected
+      feed = await sql`
+        WITH RankedStories AS (
+          SELECT s.id, s.title, s.summary, s.content, s.community, s.category, s."authorId", s.stage, s.priority, s."createdAt", s."updatedAt", s."sourceType", s."sourceUrl", s."sourceGuid", s."canonicalId", s."articleVersion", s."sourceId", s."imageUrl", s."contentAccessLevel", s."licensingRules",
+            CASE 
+              WHEN s.id IN (SELECT "storyId" FROM "UserReadHistory" WHERE "userId" = ${CURRENT_USER_ID}) THEN 2 
+              ELSE 1 
+            END as read_priority
+          FROM "StorySubmission" s
+          WHERE s.community = ${communityName} AND s.stage IN ('PENDING', 'IN_PROGRESS', 'REJECTED')
+        )
+        SELECT id, title, summary, content, community, category, "authorId", stage, priority, "createdAt", "updatedAt", "sourceType", "sourceUrl", "sourceGuid", "canonicalId", "articleVersion", "sourceId", "imageUrl", "contentAccessLevel", "licensingRules"
+        FROM RankedStories
+        ORDER BY read_priority ASC, "createdAt" DESC
+        LIMIT ${parsedLimit} OFFSET ${parsedOffset};
+      `;
+    }
 
     return applyUserPreferences(feed, CURRENT_USER_ID);
   } catch (error) {
@@ -86,13 +104,13 @@ export async function submitToCommunity({ title, summary, content, community, ca
 }
 
 /**
- * Moderator action to verify/publish a community story (moves PENDING -> PUBLISHED)
+ * Moderator action to verify a community story (moves review stage -> VERIFIED)
  */
 export async function verifyCommunityStory(storyId) {
   try {
     await sql`
       UPDATE "StorySubmission"
-      SET stage = 'PUBLISHED', "updatedAt" = NOW()
+      SET stage = 'VERIFIED', "updatedAt" = NOW()
       WHERE id = ${storyId};
     `;
     return { success: true };

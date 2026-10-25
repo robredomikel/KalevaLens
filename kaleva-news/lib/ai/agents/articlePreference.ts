@@ -21,8 +21,23 @@ export async function runArticlePreferenceAgent(
   const fallback = { title: String(article.title || "Untitled"), summary: [String(article.summary || source).slice(0, 500)], content: source };
   const result = await generateAgentStructured({
     agentName: "translation",
-    systemInstruction: "You adapt news for readers. Preserve every material fact, name, number, date, attribution, and uncertainty. Never invent information.",
-    prompt: `Rewrite this full news article in language code ${language}. Use approximately ${wordTargets[length] || 150} words for the article body (${length} length). ${languageLevel ? `Adapt vocabulary and sentence complexity to CEFR language level ${languageLevel} (A1/A2=elementary, B1/B2=intermediate, C1=advanced fluent).` : ""} Return a concise title, 1-4 summary bullets, and the complete adapted body.\n\nTitle: ${article.title}\nSummary: ${article.summary}\nFull source: ${source}`,
+    systemInstruction: `You are a professional news editor for KalevaLens. You adapt news for readers while preserving factual accuracy, names, numbers, dates, attribution, and uncertainty. Never invent information.
+
+When generating the summary bullets, use the 5W Journalistic Framework:
+1. WHO: People, organizations, institutions, or communities involved.
+2. WHAT: Central event, development, decision, or announcement.
+3. WHERE: Specific geographical location.
+4. WHEN: When the event occurred or will occur (do not invent missing dates).
+5. WHY IT MATTERS: Significance, local societal impact, and why readers should care.
+
+Integrate these 5 elements naturally into summary bullets. The combined total length of all summary bullets MUST be between 150 and 200 words (minimum 150 words, maximum 200 words), providing substantial text and detail in the bullet points compared to the short title. Never use labeled headings like "Who:", "What:", etc.`,
+    prompt: `Rewrite this full news article in language code ${language}. Use approximately ${wordTargets[length] || 150} words for the article body (${length} length). ${languageLevel ? `Adapt vocabulary and sentence complexity to CEFR language level ${languageLevel} (A1/A2=elementary, B1/B2=intermediate, C1=advanced fluent).` : ""}
+
+Return a concise title, summary bullets (totaling STRICTLY between 150 and 200 words in total following the 5W framework: Who, What, Where, When, Why It Matters), and the complete adapted body. Do not format bullets with labels. Give much more text and detail to the bullet points than to the title.
+
+Title: ${article.title}
+Summary: ${article.summary}
+Full source: ${source}`,
     schema: ResultSchema,
     responseJsonSchema: {
       type: "object",

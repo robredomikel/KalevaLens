@@ -1,42 +1,33 @@
 'use client';
-import { useState } from 'react';
 
-const dummyComments = [
-  {
-    id: 1,
-    author: 'Mohd Fahad',
-    authorType: 'Author',
-    text: 'The invisible layer of a business can be its most valuable part.',
-    timestamp: '20h',
-    replies: [
-      {
-        id: 101,
-        author: 'Anna Virtanen',
-        text: 'Totally agree! Excited to see how this scales.',
-        timestamp: '5h ago'
-      }
-    ]
-  },
-  {
-    id: 2,
-    author: 'Gaurav Agrawaal',
-    authorType: '2nd',
-    text: 'In regulated sectors, reliable infrastructure is often the real competitive advantage.',
-    timestamp: '12h',
-    replies: []
-  }
-];
+import { useState, useEffect } from 'react';
+import { 
+  getCommentsForArticle, 
+  addComment, 
+  deleteComment 
+} from '@/app/actions/comments';
+
+const CURRENT_USER_ID = "123";
 
 export default function CommentSheet({ articleId, onToggleOpen }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [sheetMode, setSheetMode] = useState('half'); // 'half' or 'full'
-  const [comments, setComments] = useState(dummyComments);
+  const [sheetMode, setSheetMode] = useState('half');
+  const [comments, setComments] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [newCommentText, setNewCommentText] = useState('');
-  
-  const [replyingTo, setReplyingTo] = useState(null);
-  const [replyText, setReplyText] = useState('');
 
-  const totalCount = comments.reduce((acc, c) => acc + 1 + c.replies.length, 0);
+  // Fetch comments immediately on mount so the count is correct right away
+  useEffect(() => {
+    async function loadInitialComments() {
+      if (articleId) {
+        const dbComments = await getCommentsForArticle(articleId);
+        setComments(dbComments || []);
+      }
+    }
+    loadInitialComments();
+  }, [articleId]);
+
+  const totalCount = comments.length;
 
   const handleOpen = (e) => {
     e.stopPropagation();
@@ -59,45 +50,32 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
     }
   };
 
-  const addComment = (e) => {
+  const handleAddComment = async (e) => {
     e.preventDefault();
-    if (!newCommentText.trim()) return;
-    const newComm = {
-      id: Date.now(),
-      author: 'You (Journalist)',
-      authorType: '',
-      text: newCommentText,
-      timestamp: 'Just now',
-      replies: []
-    };
-    setComments([newComm, ...comments]);
-    setNewCommentText('');
+    if (!newCommentText.trim() || !articleId) return;
+
+    const res = await addComment({
+      articleId,
+      userId: CURRENT_USER_ID,
+      content: newCommentText.trim()
+    });
+
+    if (res.success) {
+      setComments(prev => [...prev, res.comment]);
+      setNewCommentText('');
+    } else {
+      alert(`Error posting comment: ${res.error}`);
+    }
   };
 
-  const addReply = (commentId, e) => {
-    e.preventDefault();
-    if (!replyText.trim()) return;
+  const handleDeleteComment = async (commentId) => {
+    const res = await deleteComment(commentId, CURRENT_USER_ID);
 
-    setComments(comments.map(comment => {
-      if (comment.id === commentId) {
-        return {
-          ...comment,
-          replies: [
-            ...comment.replies,
-            {
-              id: Date.now(),
-              author: 'You (Journalist)',
-              text: replyText,
-              timestamp: 'Just now'
-            }
-          ]
-        };
-      }
-      return comment;
-    }));
-
-    setReplyText('');
-    setReplyingTo(null);
+    if (res.success) {
+      setComments(prev => prev.filter(c => c.id !== commentId));
+    } else {
+      alert(`Error deleting comment: ${res.error}`);
+    }
   };
 
   return (
@@ -146,62 +124,40 @@ export default function CommentSheet({ articleId, onToggleOpen }) {
               onScroll={handleScroll}
               className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-none"
             >
-              {comments.map((comment) => (
-                <div key={comment.id} className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[11px] font-bold text-slate-200">@{comment.author}</span>
-                    {comment.authorType && (
-                      <span className="text-[8px] font-bold text-amber-400 uppercase bg-amber-400/10 px-1 py-0.5 rounded">
-                        {comment.authorType}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-slate-500 ml-auto">{comment.timestamp}</span>
-                  </div>
-                  <p className="text-xs text-slate-300 mb-2">{comment.text}</p>
-                  
-                  <button 
-                    onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)}
-                    className="text-[10px] text-amber-400 hover:underline font-semibold"
-                  >
-                    Reply
-                  </button>
-
-                  {replyingTo === comment.id && (
-                    <form onSubmit={(e) => addReply(comment.id, e)} className="mt-2 flex gap-2 pl-3 border-l-2 border-amber-400/40">
-                      <input 
-                        type="text"
-                        placeholder={`Reply to @${comment.author}...`}
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-amber-400"
-                      />
-                      <button 
-                        type="submit"
-                        className="bg-amber-400 text-slate-950 font-bold px-2.5 py-1 rounded-lg text-[10px]"
-                      >
-                        Send
-                      </button>
-                    </form>
-                  )}
-
-                  {comment.replies.length > 0 && (
-                    <div className="mt-2 pl-3 space-y-2 border-l border-slate-800">
-                      {comment.replies.map((reply) => (
-                        <div key={reply.id} className="bg-slate-900/50 p-2 rounded-lg">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-[10px] font-bold text-amber-400">@{reply.author}</span>
-                            <span className="text-[9px] text-slate-500 ml-auto">{reply.timestamp}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-300">{reply.text}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {comments.length === 0 ? (
+                <div className="text-center py-8 text-xs text-slate-400">
+                  No comments yet. Be the first to start the discussion!
                 </div>
-              ))}
+              ) : (
+                comments.map((comment) => (
+                  <div key={comment.id} className="bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[11px] font-bold text-slate-200">
+                        @{comment.userId === CURRENT_USER_ID ? 'You' : comment.userId || 'Anonymous'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 ml-auto">
+                        {comment.createdAt ? new Date(comment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-300 mb-2">{comment.content || comment.text}</p>
+                    
+                    <div className="flex items-center space-x-3">
+                      {comment.userId === CURRENT_USER_ID && (
+                        <button 
+                          onClick={() => handleDeleteComment(comment.id)}
+                          className="text-[10px] text-rose-400 hover:underline font-semibold"
+                        >
+                          🗑 Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
-            <form onSubmit={addComment} className="p-3 border-t border-slate-800 flex items-center gap-2 bg-slate-950 shrink-0">
+            <form onSubmit={handleAddComment} className="p-3 border-t border-slate-800 flex items-center gap-2 bg-slate-950 shrink-0">
               <input 
                 type="text"
                 placeholder="Share your thoughts..."

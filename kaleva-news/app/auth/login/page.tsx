@@ -2,23 +2,50 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { loginUser } from '@/app/actions/auth';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       alert("Please fill in all fields.");
       return;
     }
-    // Set authenticated user context
-    const mockUserId = email === 'admin@kaleva.fi' ? 'admin' : '123';
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('kaleva_current_user', JSON.stringify({ userId: mockUserId, email }));
+
+    setLoading(true);
+
+    try {
+      const response = await loginUser({ email, password });
+
+      if (response.success) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('kaleva_current_user', JSON.stringify({ 
+            userId: response.user.id, 
+            email: response.user.email,
+            name: response.user.name,
+            community: response.user.community,
+            role: response.user.role // <-- Added role here!
+          }));
+        }
+
+        // Role-based routing: send moderators to Kanban, readers to feed
+        if (response.user.role === 'MODERATOR') {
+          window.location.href = '/moderator/kanban';
+        } else {
+          window.location.href = '/?signedIn=true';
+        }
+      } else {
+        alert(response.error);
+        setLoading(false);
+      }
+    } catch (error) {
+      alert("Sign in failed. Please check your connection.");
+      setLoading(false);
     }
-    window.location.href = '/?signedIn=true';
   };
 
   return (
@@ -61,9 +88,10 @@ export default function LoginPage() {
 
           <button 
             type="submit"
-            className="w-full bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg mt-2"
+            disabled={loading}
+            className="w-full bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg mt-2 disabled:opacity-50"
           >
-            Sign In 🚀
+            {loading ? 'Signing in…' : 'Sign In 🚀'}
           </button>
         </form>
 

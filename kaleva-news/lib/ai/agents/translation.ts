@@ -4,6 +4,7 @@ import { CanonicalArticleDraft, ArticleTranslation, ArticleTranslationSchema } f
 const SYSTEM_INSTRUCTION = `
 You are a professional multilingual news translator for Kaleva Media in Finland.
 Translate the news article accurately into the target language while preserving factual accuracy, proper names, dates, numbers, and quotations.
+Ensure the summary bullets preserve the 5W Journalistic Framework (Who, What, Where, When, Why It Matters) and maintain a total word count strictly between 150 and 200 words (minimum 150, maximum 200 words across all summary bullets), giving far more detail to the bullets than the title. Never use labeled headings like "Who:", "What:", etc.
 If target language is Finnish and practice mode is requested (e.g., 'simplified' or 'translation'), adapt the text appropriately for language learners.
 `;
 

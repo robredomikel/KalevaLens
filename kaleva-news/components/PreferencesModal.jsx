@@ -1,9 +1,12 @@
+// @ts-nocheck -- legacy JSX page is incrementally typed.
 'use client';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { loadPreferences, savePreferences } from '@/app/actions/preferences';
 import { DEFAULT_PREFERENCES, LANGUAGE_LEVELS, SUPPORTED_LANGUAGES } from '@/lib/preferences/config';
 
 export default function PreferencesModal({ userId, open, onClose, onSaved }) {
+  const router = useRouter();
   const [values, setValues] = useState(DEFAULT_PREFERENCES);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -43,6 +46,13 @@ export default function PreferencesModal({ userId, open, onClose, onSaved }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSignOut = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('kaleva_current_user');
+    }
+    router.push('/auth/login');
   };
 
   const allTopics = [
@@ -207,13 +217,24 @@ export default function PreferencesModal({ userId, open, onClose, onSaved }) {
           </p>
         )}
 
-        {/* Action Button */}
-        <button
-          disabled={saving}
-          className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg"
-        >
-          {saving ? 'Saving preferences…' : 'Save all preferences'}
-        </button>
+        {/* Action Buttons: Save All Preferences & Sign Out */}
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="w-full bg-rose-500/20 text-rose-400 border border-rose-500/40 font-bold py-3 rounded-xl text-xs hover:bg-rose-500/30 transition shadow-lg"
+          >
+            🚪 Sign Out
+          </button>
+
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full bg-amber-400 disabled:opacity-50 text-slate-950 font-bold py-3 rounded-xl text-xs hover:bg-amber-300 transition shadow-lg"
+          >
+            {saving ? 'Saving…' : 'Save all preferences'}
+          </button>
+        </div>
 
       </form>
     </div>
